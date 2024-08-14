@@ -1,16 +1,11 @@
+
 const mysql = require('mysql');
 const env = require('dotenv');
 
 env.config();
-
+const urlDB=`mysql://root:vxnTTnThHwEOWndmHPvVqPsCvjneYHHE@monorail.proxy.rlwy.net:12399/railway`
 const pool = mysql.createPool({
-  host: 'localhost',
-  user: 'root',
-  password: '',
-  database: 'job_portal',
-  waitForConnections: true,
-  connectionLimit: 10,
-  queueLimit: 0
+urlDB
 });
 
 module.exports = pool;
