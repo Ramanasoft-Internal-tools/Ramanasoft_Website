@@ -3,7 +3,7 @@ const mysql = require('mysql');
 const env = require('dotenv');
 
 env.config();
-const urlDB=`mysql -hmonorail.proxy.rlwy.net -uroot -pvxnTTnThHwEOWndmHPvVqPsCvjneYHHE --port 12399 --protocol=TCP railway`
+const urlDB=`mysql://root:vxnTTnThHwEOWndmHPvVqPsCvjneYHHE@monorail.proxy.rlwy.net:12399/railway`
 const pool = mysql.createPool({
 urlDB
 });
