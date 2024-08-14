@@ -1,7 +1,7 @@
 {
   "files": {
     "main.css": "/Ramanasoft_Website/JobPortal/static/css/main.d26c1947.css",
-    "main.js": "/Ramanasoft_Website/JobPortal/static/js/main.a9f64130.js",
+    "main.js": "/Ramanasoft_Website/JobPortal/static/js/main.ad01f5b9.js",
     "static/js/213.53d95c86.chunk.js": "/Ramanasoft_Website/JobPortal/static/js/213.53d95c86.chunk.js",
     "static/js/732.fad694cd.chunk.js": "/Ramanasoft_Website/JobPortal/static/js/732.fad694cd.chunk.js",
     "static/js/453.21e92646.chunk.js": "/Ramanasoft_Website/JobPortal/static/js/453.21e92646.chunk.js",
@@ -28,13 +28,13 @@
     "static/media/amd.png": "/Ramanasoft_Website/JobPortal/static/media/amd.7da9c90e8b0ef12ef768.png",
     "index.html": "/Ramanasoft_Website/JobPortal/index.html",
     "main.d26c1947.css.map": "/Ramanasoft_Website/JobPortal/static/css/main.d26c1947.css.map",
-    "main.a9f64130.js.map": "/Ramanasoft_Website/JobPortal/static/js/main.a9f64130.js.map",
+    "main.ad01f5b9.js.map": "/Ramanasoft_Website/JobPortal/static/js/main.ad01f5b9.js.map",
     "213.53d95c86.chunk.js.map": "/Ramanasoft_Website/JobPortal/static/js/213.53d95c86.chunk.js.map",
     "732.fad694cd.chunk.js.map": "/Ramanasoft_Website/JobPortal/static/js/732.fad694cd.chunk.js.map",
     "453.21e92646.chunk.js.map": "/Ramanasoft_Website/JobPortal/static/js/453.21e92646.chunk.js.map"
   },
   "entrypoints": [
     "static/css/main.d26c1947.css",
-    "static/js/main.a9f64130.js"
+    "static/js/main.ad01f5b9.js"
   ]
 }
