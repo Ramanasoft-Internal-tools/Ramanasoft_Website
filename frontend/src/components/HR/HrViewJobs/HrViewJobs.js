@@ -1,13 +1,17 @@
 import React, { useEffect, useState } from 'react';
-import { Container, Form, Row, Col } from 'react-bootstrap';
+import { Navbar, Nav, Container, Form, Button, Row, Col } from 'react-bootstrap';
 
+import { toast } from 'react-toastify';
 import axios from 'axios';
-import {FaChevronRight} from 'react-icons/fa';
+import { FaCheck, FaChevronRight, FaTimes } from 'react-icons/fa';
 
+import { MdEdit, MdDelete } from 'react-icons/md';
 import HrNavbar from '../HrNavbar/HrNavbar';
+import EditJobModal from '../EditJobModal/EditJobModal';
 import { RxDotFilled } from "react-icons/rx";
+import { useNavigate,Link} from 'react-router-dom';
 import './HrViewJobs.css';
-import { FaMapMarkerAlt, FaMoneyBillWave, FaUserFriends, FaCalendarAlt} from 'react-icons/fa';
+import { FaMapMarkerAlt, FaMoneyBillWave, FaUserFriends, FaCalendarAlt,FaAngleRight } from 'react-icons/fa';
 import Cookies from 'js-cookie'
 import { FcExpired } from 'react-icons/fc';
 import {Pagination, Box} from '@mui/material';
@@ -18,11 +22,14 @@ const HrViewJobs = () => {
   const [jobs, setJobs] = useState([]);
   const [searchTerm, setSearchTerm] = useState('');
   const [filteredJobs, setFilteredJobs] = useState([]);
+  const [showModal, setShowModal] = useState(false);
+  const [selectedJob, setSelectedJob] = useState(null);
   const [sortCriteria, setSortCriteria] = useState('');
-  const [currentPage, setCurrentPage] = useState(1); 
+  const [currentPage, setCurrentPage] = useState(1);  // For pagination
   const jobsPerPage = 6;  // Number of jobs per page
-  const [selectedYear, setSelectedYear] = useState('');
+  const [selectedYear, setSelectedYear] = useState(''); // For year filter
   const [selectedMonth, setSelectedMonth] = useState('');
+  const navigate=useNavigate()
 
   useEffect(() => {
     fetchJobs();
@@ -62,7 +69,9 @@ const HrViewJobs = () => {
 
   const fetchJobs = async () => {
     try {
+      console.log("HR",HrId)
       const response = await axios.get(`http://localhost:5000/hr-view-jobs?hrId=${HrId}`);
+      
       setJobs(response.data);
     } catch (error) {
       console.error('Error fetching jobs:', error);
