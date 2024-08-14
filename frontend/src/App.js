@@ -160,7 +160,7 @@ function PrivateRoute({ role, element }) {
 function App() {
   return (
     <div className=''>
-      <BrowserRouter>
+      <BrowserRouter basename="/JobPortal/">
         <Routes>
           <Route path='/' element={<Home />} />
           <Route path='/about' element={<Home defaultTab="about" />} />

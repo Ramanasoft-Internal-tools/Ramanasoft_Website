@@ -1,0 +1,40 @@
+{
+  "files": {
+    "main.css": "/Ramanasoft-Internal-tools.github.io/Ramanasoft_Website/static/css/main.f8a3a60d.css",
+    "main.js": "/Ramanasoft-Internal-tools.github.io/Ramanasoft_Website/static/js/main.89f01d10.js",
+    "static/js/213.53d95c86.chunk.js": "/Ramanasoft-Internal-tools.github.io/Ramanasoft_Website/static/js/213.53d95c86.chunk.js",
+    "static/js/732.fad694cd.chunk.js": "/Ramanasoft-Internal-tools.github.io/Ramanasoft_Website/static/js/732.fad694cd.chunk.js",
+    "static/js/453.21e92646.chunk.js": "/Ramanasoft-Internal-tools.github.io/Ramanasoft_Website/static/js/453.21e92646.chunk.js",
+    "static/media/IT Staffig.jpg": "/Ramanasoft-Internal-tools.github.io/Ramanasoft_Website/static/media/IT Staffig.1ed03cad38e4abbe67be.jpg",
+    "static/media/slider3.jpeg": "/Ramanasoft-Internal-tools.github.io/Ramanasoft_Website/static/media/slider3.66b2f09229bd05abd37e.jpeg",
+    "static/media/slider1.jpeg": "/Ramanasoft-Internal-tools.github.io/Ramanasoft_Website/static/media/slider1.36f97c859c8e831d6649.jpeg",
+    "static/media/contact.jpg": "/Ramanasoft-Internal-tools.github.io/Ramanasoft_Website/static/media/contact.89f4537384494cb4dd98.jpg",
+    "static/media/slider2.jpeg": "/Ramanasoft-Internal-tools.github.io/Ramanasoft_Website/static/media/slider2.d3028be86b05441f1cf2.jpeg",
+    "static/media/New-Project.png.webp": "/Ramanasoft-Internal-tools.github.io/Ramanasoft_Website/static/media/New-Project.png.d502ebdb8a386ec59449.webp",
+    "static/media/qtimg.jpg": "/Ramanasoft-Internal-tools.github.io/Ramanasoft_Website/static/media/qtimg.a6cbb7d28ffdac9b3cf4.jpg",
+    "static/media/jobsearch.jpeg": "/Ramanasoft-Internal-tools.github.io/Ramanasoft_Website/static/media/jobsearch.7a8cd39878d88fe87ef9.jpeg",
+    "static/media/thumbnail.jpeg": "/Ramanasoft-Internal-tools.github.io/Ramanasoft_Website/static/media/thumbnail.7bd107b6e997dc8b5c05.jpeg",
+    "static/media/bg.jpg": "/Ramanasoft-Internal-tools.github.io/Ramanasoft_Website/static/media/bg.42cc6bc30b262fb9965f.jpg",
+    "static/media/avatar3.jpg": "/Ramanasoft-Internal-tools.github.io/Ramanasoft_Website/static/media/avatar3.c4940a14df83364b2d6e.jpg",
+    "static/media/RSLogo.jpeg": "/Ramanasoft-Internal-tools.github.io/Ramanasoft_Website/static/media/RSLogo.20be26e87f9950418ada.jpeg",
+    "static/media/p3.jpeg": "/Ramanasoft-Internal-tools.github.io/Ramanasoft_Website/static/media/p3.20be26e87f9950418ada.jpeg",
+    "static/media/avatar1.jpg": "/Ramanasoft-Internal-tools.github.io/Ramanasoft_Website/static/media/avatar1.964c6eeae39c1bfdf14a.jpg",
+    "static/media/raspberry-pi.png": "/Ramanasoft-Internal-tools.github.io/Ramanasoft_Website/static/media/raspberry-pi.8ed71307ae2b2b52b5e6.png",
+    "static/media/paypal.png": "/Ramanasoft-Internal-tools.github.io/Ramanasoft_Website/static/media/paypal.9907652fbdf2226d490a.png",
+    "static/media/avatar2.avif": "/Ramanasoft-Internal-tools.github.io/Ramanasoft_Website/static/media/avatar2.02a3c5c5ab9a1f4e2e00.avif",
+    "static/media/janssen.png": "/Ramanasoft-Internal-tools.github.io/Ramanasoft_Website/static/media/janssen.8ebf9e37be7a2cb22ed7.png",
+    "static/media/facebook.png": "/Ramanasoft-Internal-tools.github.io/Ramanasoft_Website/static/media/facebook.795fce8e464693d7346d.png",
+    "static/media/stripe.png": "/Ramanasoft-Internal-tools.github.io/Ramanasoft_Website/static/media/stripe.c12a1ccd5319cf26a373.png",
+    "static/media/amd.png": "/Ramanasoft-Internal-tools.github.io/Ramanasoft_Website/static/media/amd.7da9c90e8b0ef12ef768.png",
+    "index.html": "/Ramanasoft-Internal-tools.github.io/Ramanasoft_Website/index.html",
+    "main.f8a3a60d.css.map": "/Ramanasoft-Internal-tools.github.io/Ramanasoft_Website/static/css/main.f8a3a60d.css.map",
+    "main.89f01d10.js.map": "/Ramanasoft-Internal-tools.github.io/Ramanasoft_Website/static/js/main.89f01d10.js.map",
+    "213.53d95c86.chunk.js.map": "/Ramanasoft-Internal-tools.github.io/Ramanasoft_Website/static/js/213.53d95c86.chunk.js.map",
+    "732.fad694cd.chunk.js.map": "/Ramanasoft-Internal-tools.github.io/Ramanasoft_Website/static/js/732.fad694cd.chunk.js.map",
+    "453.21e92646.chunk.js.map": "/Ramanasoft-Internal-tools.github.io/Ramanasoft_Website/static/js/453.21e92646.chunk.js.map"
+  },
+  "entrypoints": [
+    "static/css/main.f8a3a60d.css",
+    "static/js/main.89f01d10.js"
+  ]
+}
