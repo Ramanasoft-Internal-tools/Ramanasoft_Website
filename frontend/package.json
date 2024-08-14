@@ -2,7 +2,7 @@
   "name": "frontnend",
   "version": "0.1.0",
   "private": true,
-  "homepage": "https://Ramanasoft-Internal-tools.github.io/Ramanasoft_Website/",
+  "homepage": "https://Ramanasoft-Internal-tools.github.io/Ramanasoft_Website",
   "dependencies": {
     "@ckeditor/ckeditor5-build-classic": "^43.0.0",
     "@ckeditor/ckeditor5-react": "^9.0.0",
