@@ -502,7 +502,7 @@ app.post('/hr-login', [
   }
 
   try {
-    const row = await query('SELECT * FROM hrs WHERE email = ? AND password = ?', [email, password]);
+    const row = await query('SELECT * FROM hr_data WHERE email = ? AND password = ?', [email, password]);
     console.log(row);
     if (row.length > 0) {
       const user = row[0];
