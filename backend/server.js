@@ -2360,7 +2360,7 @@ app.get('/quizData/:token', async (req, res) => {
   
       // Encode binary data to base64
       
-      console.log(response)
+      
       res.status(200).json(rows); // Send back the modified rows
     } catch (err) {
       console.error(err);
