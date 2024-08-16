@@ -2279,7 +2279,7 @@ app.get('/quizData/:token', async (req, res) => {
 
     const sql_q = `SELECT applied_students.*,
       J.JobId,
-      J.postedBy FROM applied_students JOIN jobs AS J ON applied_students.JobID = J.JobId WHERE J.postedBy = '${hrId}' and applied_students.candidateId='${candidateId}'`;
+      J.postedBy FROM applied_students JOIN jobs AS J ON applied_students.JobID = J.JobId WHERE J.postedBy = '${hrId}' and applied_students.candidateID='${candidateId}'`;
     console.log(sql_q)
     try {
       const rows = await query(sql_q);
