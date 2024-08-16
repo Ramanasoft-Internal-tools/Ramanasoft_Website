@@ -2336,6 +2336,7 @@ app.get('/quizData/:token', async (req, res) => {
       let sql='';
       if(status=="jd-received"){
         sql=`SELECT * FROM jobs WHERE postedBy = '${hrId}'`;
+      }
         else{
         sql=`SELECT * FROM jobs WHERE status='${status}' and postedBy = '${hrId}'`;
         }
