@@ -795,6 +795,22 @@ app.get("/intern_data/:id", async (req, res) => {
   }
 });
 
+// DELETE a student by candidateID
+app.delete("/intern_data/:id", async (req, res) => {
+  const internID = req.params.id;
+  try {
+    const result = await query('DELETE FROM interns WHERE candidateID = ?', [internID]);
+
+    if (result.affectedRows > 0) {
+      res.status(200).json({ message: 'Student data deleted successfully.' });
+    } else {
+      res.status(404).json({ message: 'Student not found.' });
+    }
+  } catch (err) {
+    console.error("Database query error: ", err);
+    res.status(500).json({ message: "Server error" });
+  }
+});
 
 // SA_details for Super Admin Dashboard
 app.get("/SA_details/:id", async (req, res) => {
