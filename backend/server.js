@@ -2347,7 +2347,29 @@ app.get('/quizData/:token', async (req, res) => {
       res.status(500).json({ message: 'Server Error' });
     }
   });
+  app.get("/view-jobs-status", async (req, res) => {
+    const {status} = req.query
 
+    try {
+      let sql='';
+      if(status=='jd-received'){
+        sql=`SELECT * FROM jobs`;
+      }
+      else{
+        sql=`SELECT * FROM jobs WHERE status='${status}'`;
+      }
+      const rows = await query(sql);
+  
+      // Encode binary data to base64
+      
+      console.log(rows)
+      res.status(200).json(response); // Send back the modified rows
+    } catch (err) {
+      console.error(err);
+      res.status(500).json({ message: 'Server Error' });
+    }
+  });
+/*
   app.get("/view-jobs-status", async (req, res) => {
     const {status} = req.query
 
@@ -2365,5 +2387,5 @@ app.get('/quizData/:token', async (req, res) => {
       console.error(err);
       res.status(500).json({ message: 'Server Error' });
     }
-  });
+  });*/
   
