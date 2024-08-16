@@ -2333,15 +2333,18 @@ app.get('/quizData/:token', async (req, res) => {
     const {status, hrId } = req.query
 
     try {
-      const rows = await query(`SELECT * FROM jobs WHERE status='${status}' and postedBy = '${hrId}'`);
+      let sql='';
+      if(status=="jd-received"){
+        sql=`SELECT * FROM jobs WHERE postedBy = '${hrId}'`;
+        else{
+        sql=`SELECT * FROM jobs WHERE status='${status}' and postedBy = '${hrId}'`;
+        }
+      const rows = await query(sql);
   
       // Encode binary data to base64
-      const response = rows.map(row => ({
-        ...row,
-        resume: row.resume ? row.resume.toString('base64') : null
-      }));
+      
       console.log(response)
-      res.status(200).json(response); // Send back the modified rows
+      res.status(200).json(rows); // Send back the modified rows
     } catch (err) {
       console.error(err);
       res.status(500).json({ message: 'Server Error' });
@@ -2363,7 +2366,7 @@ app.get('/quizData/:token', async (req, res) => {
       // Encode binary data to base64
       
       console.log(rows)
-      res.status(200).json(response); // Send back the modified rows
+      res.status(200).json(rows); // Send back the modified rows
     } catch (err) {
       console.error(err);
       res.status(500).json({ message: 'Server Error' });
