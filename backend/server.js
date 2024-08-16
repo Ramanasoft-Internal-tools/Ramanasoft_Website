@@ -6,7 +6,9 @@ const env = require('dotenv');
 const axios = require('axios');
 const cron = require("node-cron");
 const crypto = require('crypto');
-const multer = require('multer')
+const multer = require('multer');
+const util = require('util');
+
 const socketIo = require('socket.io');
 const nodemailer = require('nodemailer');
 const pool = require('./db');
@@ -23,7 +25,8 @@ var server = app.listen(PORT, () => {
   console.log(`Server is running on port ${PORT}`);
 });
 var io = require('socket.io')(server, { cors: { origin: '*' } });
-
+const query = util.promisify(pool.query).bind(pool);
+/*
 const query = (sql, values) => {
   return new Promise((resolve, reject) => {
     pool.query(sql, values, (error, results) => {
@@ -31,7 +34,7 @@ const query = (sql, values) => {
       resolve(results);
     });
   });
-};
+};*/
 
 const sendEmail = async (email, mailOptions) => {
   const transport = nodemailer.createTransport({
@@ -48,6 +51,7 @@ const sendEmail = async (email, mailOptions) => {
     from: '"React Team" <noreply@qtnext.com>',
     ...mailOptions
   };
+  console.log("email",options)
 
   try {
     await transport.sendMail(options);
@@ -65,7 +69,7 @@ app.get('/hr-job-applications', async (req, res) => {
   const{companyName,hrId}=req.query;
   console.log("Company name",companyName,hrId)
   let sql;
-  if (companyName==''){
+  if (companyName==''||companyName===undefined){
     sql = `SELECT applied_students.*,
     J.JobId,
     J.postedBy
@@ -99,7 +103,7 @@ app.put("/applications/:id/status", async (req, res) => {
   const { id } = req.params
   console.log(status, id)
   try {
-    const [result] = await query('UPDATE applied_Students SET status=? WHERE applicationID=?', [status, id])
+    const result = await query('UPDATE applied_students SET status=? WHERE applicationID=?', [status, id])
     console.log(result)
     res.status(200).json({ message: "Status Changed Successfully" })
   } catch (err) {
@@ -109,14 +113,21 @@ app.put("/applications/:id/status", async (req, res) => {
 })
 
 //Intern job apply api
-app.post('/apply', upload.single('resume'), async (req, res) => {
-  const { fullName, jobRole, email, companyName, technology, mobileNo, gender, passedOut, experience, status } = req.body;
+app.post('/apply-job', upload.single('resume'), async (req, res) => {
+  const { fullName, jobID, candidateID, jobRole, email, companyName, technology, mobileNo, gender, passedOut, experience } = req.body;
   const resume = req.file ? req.file.buffer : null;
-  console.log(resume)
+  const status = "applied";
+
+  console.log(req.body);
+  console.log(
+    'INSERT INTO applied_students (jobID, fullName, candidateID, jobRole, email, companyName, technology, mobileNo, gender, passedOut, experience, status, resume) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+    [Number(jobID), fullName, candidateID, jobRole, email, companyName, technology, mobileNo, gender, passedOut, experience, status, resume]
+  );
+
   try {
     await query(
-      'INSERT INTO applied_Students (fullName,jobRole, email,companyName, technology, mobileNo, gender, passedOut, experience, status, resume) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?,?,?)',
-      [fullName, jobRole, email, companyName, technology, mobileNo, gender, passedOut, experience, status, resume]
+      'INSERT INTO applied_students (jobID, fullName, candidateID, jobRole, email, companyName, technology, mobileNo, gender, passedOut, experience, status, resume) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+      [Number(jobID), fullName, candidateID, jobRole, email, companyName, technology, mobileNo, gender, passedOut, experience, status, resume]
     );
     res.status(200).json({ message: 'Application submitted successfully' });
   } catch (err) {
@@ -125,13 +136,14 @@ app.post('/apply', upload.single('resume'), async (req, res) => {
   }
 });
 
+
 //Resume download
 app.get('/download-resume/:id', async (req, res) => {
   const { id } = req.params;
   console.log(req.params)
   console.log(id)
   try {
-    const rows = await query('SELECT resume FROM applied_Students WHERE applicationID = ?', [id]);
+    const rows = await query('SELECT resume FROM applied_students WHERE applicationID = ?', [id]);
 
     if (rows.length === 0) {
       return res.status(404).json({ message: 'Resume not found' });
@@ -152,7 +164,7 @@ app.get('/download-resume/:id', async (req, res) => {
 
 //Super admin applied applications
 app.get('/applications', async (req, res) => {
-  const sql = 'SELECT * FROM applied_Students';
+  const sql = 'SELECT * FROM applied_students';
   try {
     const rows = await query(sql);
     console.log("Rows",rows)
@@ -174,11 +186,11 @@ app.get('/statistics/:status', async (req, res) => {
   try {
     let result;
     if (status === 'applied') {
-      [result] = await query('SELECT COUNT(*) as count FROM applied_Students;')
+      [result] = await query('SELECT COUNT(*) as count FROM applied_students;')
 
     }
     else {
-      [result] = await query(`SELECT COUNT(*) as count FROM applied_Students WHERE status='${status}'`)
+      [result] = await query(`SELECT COUNT(*) as count FROM applied_students WHERE status='${status}'`)
     }
     console.log(result.count)
 
@@ -188,7 +200,7 @@ app.get('/statistics/:status', async (req, res) => {
     res.status(500).json({ message: 'Server Error' });
   }
 })
-
+/*
 //Job descriptions and job applications for superadmin 
 app.get('/applications/:jobId', async (req, res) => {
   const { jobId } = req.params;
@@ -204,6 +216,26 @@ app.get('/applications/:jobId', async (req, res) => {
     console.error(err);
     res.status(500).json({ message: 'Server Error' });
   }
+});*/
+
+app.get('/applications/:jobId', async (req, res) => {
+  const { jobId } = req.params;
+  const sql = `SELECT * FROM applied_students where jobId='${jobId}'`;
+  //console.log("got  here")
+  try {
+    const rows = await query(sql);
+
+    // Encode binary data to base64
+    const response = rows.map(row => ({
+      ...row,
+      resume: row.resume ? row.resume.toString('base64') : null
+    }));
+
+    res.status(200).json(response); // Send back the modified rows
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ message: 'Server Error' });
+  }
 });
 
 
@@ -211,14 +243,16 @@ app.get('/applications/:jobId', async (req, res) => {
 
 app.post('/register/intern', async (req, res) => {
   const { fullName, email, mobileno, altmobileno, address, batchno, modeOfInternship, belongedToVasaviFoundation, domain } = req.body;
+  
   const emailGot = req.body.email;
   try {
-    const data = await query('SELECT email FROM interns WHERE email = ?', [email]);
+    const data = await query('SELECT email FROM intern_data WHERE email = ?', [email]);
     if (data.length > 0) {
       return res.status(400).json({ message: 'Candidate already exists' });
     }
     else {
       const sql = 'INSERT INTO intern_requests (fullName, email, mobileNo, altMobileNo, address, batchno, modeOfInternship, belongedToVasaviFoundation, domain) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)';
+      
       try {
         await query(sql, [fullName, email, mobileno, altmobileno, address, batchno, modeOfInternship, belongedToVasaviFoundation, domain]);
 
@@ -255,10 +289,22 @@ app.post('/register/hr', async (req, res) => {
     emergencyContactAddress, emergencyContactMobile,
     gender, branch
   } = req.body;
+  
   console.log(req.body);
+  
+  // Function to convert date string "20-07-1998" to "YYYY-MM-DD"
+  function formatDateForDB(dateStr) {
+    const [day, month, year] = dateStr.split('-');
+    const date = new Date(year, month - 1, day); // month is 0-based
+    return date.toISOString().split('T')[0]; // "YYYY-MM-DD" format
+  }
+
   if (!fullName || !email || !contactNo || !dob || !address || !workEmail || !workMobile || !emergencyContactName || !emergencyContactAddress || !emergencyContactMobile || !gender || !branch) {
     return res.status(400).json({ error: 'All fields are required' });
   }
+
+  // Convert the date of birth to the required format
+  const dobFormatted = formatDateForDB(dob);
 
   const sql = `INSERT INTO hr_requests (
     fullName, email, contactNo, dob, address, workEmail, workMobile,
@@ -267,17 +313,17 @@ app.post('/register/hr', async (req, res) => {
 
   try {
     await query(sql, [
-      fullName, email, contactNo, dob, address, workEmail, workMobile,
+      fullName, email, contactNo, dobFormatted, address, workEmail, workMobile,
       emergencyContactName, emergencyContactAddress, emergencyContactMobile, gender, branch
     ]);
 
     res.status(200).json({ message: 'HR registration successful' });
   } catch (err) {
-    console.log(err);
     console.error('Error inserting data:', err);
     res.status(500).json({ error: 'Internal Server Error' });
   }
 });
+
 
 //Superadmin api to add hr
 app.post('/add/hr', async (req, res) => {
@@ -292,7 +338,7 @@ app.post('/add/hr', async (req, res) => {
     return res.status(400).json({ error: 'All fields are required' });
   }
 
-  const lastHRQuery = 'SELECT HRid FROM hrs ORDER BY HRid DESC LIMIT 1';
+  const lastHRQuery = 'SELECT HRid FROM hr_data ORDER BY HRid DESC LIMIT 1';
   const lastHRResult = await query(lastHRQuery);
 
   if (lastHRResult === undefined) {
@@ -305,7 +351,7 @@ app.post('/add/hr', async (req, res) => {
   lastHRIdNumber++;
   const newHRId = `RSHR-${String(lastHRIdNumber).padStart(2, '0')}`;
 
-  const sql = `INSERT INTO hrs (
+  const sql = `INSERT INTO hr_data (
     HRid, fullName, email, mobileNo, dob, address, workEmail, workMobile,
     emergencyContactName, emergencyContactAddress, emergencyContactMobile, gender, branch, password
   ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`;
@@ -394,7 +440,7 @@ app.post("/accept-hrs", async (req, res) => {
   const acceptedHRs = [];
   const rejectedHRs = [];
   try {
-    const existingHRsQuery = 'SELECT email, mobileNo FROM hrs WHERE email IN (?) OR mobileNo IN (?)';
+    const existingHRsQuery = 'SELECT email, mobileNo FROM hr_data WHERE email IN (?) OR mobileNo IN (?)';
     const existingHRsResult = await query(existingHRsQuery, [
       hrs.map(hr => hr.email),
       hrs.map(hr => hr.mobileNo)
@@ -407,7 +453,7 @@ app.post("/accept-hrs", async (req, res) => {
     const existingEmails = new Set(existingHRs.map(hr => hr.email));
     const existingPhones = new Set(existingHRs.map(hr => hr.mobileNo));
 
-    const lastHRQuery = 'SELECT HRid FROM hrs ORDER BY HRid DESC LIMIT 1';
+    const lastHRQuery = 'SELECT HRid FROM hr_data ORDER BY HRid DESC LIMIT 1';
     const lastHRResult = await query(lastHRQuery);
 
     if (lastHRResult === undefined) {
@@ -424,7 +470,7 @@ app.post("/accept-hrs", async (req, res) => {
       } else {
         lastHRIdNumber++;
         const newHRId = `RSHR-${String(lastHRIdNumber).padStart(2, '0')}`;
-        await query('INSERT INTO hrs (HRid, fullName, email, mobileNo, dob, address, workEmail, workMobile, emergencyContactName, emergencyContactAddress, emergencyContactMobile, gender, branch) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)', [
+        await query('INSERT INTO hr_data (HRid, fullName, email, mobileNo, dob, address, workEmail, workMobile, emergencyContactName, emergencyContactAddress, emergencyContactMobile, gender, branch) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)', [
           newHRId,
           hr.fullName,
           hr.email,
@@ -469,7 +515,7 @@ app.post("/reject-hrs", async (req, res) => {
   }
 
   const placeholders = requestIDs.map(() => '?').join(',');
-  const sqlQuery = `DELETE FROM hr_requests WHERE id IN (${placeholders})`;
+  const sqlQuery = `DELETE FROM hr_requests WHERE requestID IN (${placeholders})`;
 
   try {
     const result = await query(sqlQuery, requestIDs);
@@ -523,7 +569,7 @@ app.delete('/delete_hr/:id', async (req, res) => {
   const hrId = req.params.id;
 
   try {
-    const result = await query('DELETE FROM hrs WHERE HRid = ?', [hrId]);
+    const result = await query('DELETE FROM hr_data WHERE HRid = ?', [hrId]);
 
     if (result.affectedRows === 0) {
       return res.status(404).json({ error: 'HR record not found' });
@@ -617,14 +663,14 @@ app.post("/update-job", async (req, res) => {
     const setPart = Object.keys(changedValues)
       .map(key => `${key} = ?`)
       .join(", ");
-
+    
     const values = [...Object.values(changedValues), jobId];
-
+    
     const result = await query(
       `UPDATE jobs SET ${setPart} WHERE jobId = ?`,
       values
     );
-
+    
     if (result.affectedRows === 1) {
       return res.status(200).json({ message: 'Job updated successfully' });
     } else {
@@ -665,8 +711,10 @@ app.get("/view-jobs", async (req, res) => {
   console.log("called")
   try {
     const jobs = await query('SELECT * FROM jobs');
+    console.log(jobs)
     res.status(200).json(jobs);
   } catch (err) {
+    console.log(err)
     res.status(500).json({ message: "Server error" });
   }
 });
@@ -706,7 +754,8 @@ app.post("/intern_login", [
   }
 
   try {
-    const rows = await query('SELECT * FROM interns WHERE mobileno = ?', [mobileNo]);
+    const rows = await query('SELECT * FROM intern_data WHERE mobileNo = ?', [mobileNo]);
+    console.log(rows)
     if (rows.length > 0) {
       const intern = rows[0];
       console.log(intern);
@@ -726,7 +775,7 @@ app.post("/intern_login", [
 //Students list in SA 
 app.get("/intern_data", async (req, res) => {
   try {
-    const rows = await query('SELECT * FROM interns');
+    const rows = await query('SELECT * FROM intern_data');
     res.status(200).json(rows);
   } catch (err) {
     console.error("Database query error: ", err);
@@ -738,7 +787,7 @@ app.get("/intern_data", async (req, res) => {
 app.get("/intern_data/:id", async (req, res) => {
   const internID = req.params.id;
   try {
-    const rows = await query('SELECT * FROM interns WHERE candidateID = ?', [internID]);
+    const rows = await query('SELECT * FROM intern_data WHERE candidateID = ?', [internID]);
     res.status(200).json(rows);
   } catch (err) {
     console.error("Database query error: ", err);
@@ -746,28 +795,14 @@ app.get("/intern_data/:id", async (req, res) => {
   }
 });
 
-// DELETE a student by candidateID
-app.delete("/intern_data/:id", async (req, res) => {
-  const internID = req.params.id;
-  try {
-    const result = await query('DELETE FROM interns WHERE candidateID = ?', [internID]);
-
-    if (result.affectedRows > 0) {
-      res.status(200).json({ message: 'Student data deleted successfully.' });
-    } else {
-      res.status(404).json({ message: 'Student not found.' });
-    }
-  } catch (err) {
-    console.error("Database query error: ", err);
-    res.status(500).json({ message: "Server error" });
-  }
-});
 
 // SA_details for Super Admin Dashboard
 app.get("/SA_details/:id", async (req, res) => {
   const SAid = req.params.id;
+  console.log(SAid)
   try {
-    const [SA] = await query('SELECT name, username, email, password FROM superadmin WHERE SAid = ?', [SAid]);
+    const SA = await query('SELECT name, username, email, password FROM superadmin WHERE SAid = ?', [SAid]);
+    console.log(SA)
     if (SA.length > 0) {
       res.status(200).json(SA[0]);
     } else {
@@ -783,7 +818,7 @@ app.get("/SA_details/:id", async (req, res) => {
 // HR Data for Super Admin Dashboard
 app.get('/hr_data', async (req, res) => {
   try {
-    const rows = await query('SELECT * FROM hrs');
+    const rows = await query('SELECT * FROM hr_data');
     res.status(200).json(rows);
   } catch (err) {
     console.error('Database query error:', err);
@@ -791,12 +826,13 @@ app.get('/hr_data', async (req, res) => {
   }
 });
 
+
 // HR details by HRid for HR Dashboard
 app.get("/hr-profile/:hrID", async (req, res) => {
   const { hrID } = req.params
   try {
     console.log("fetching ", hrID, " Details")
-    const result = await query(`SELECT *  FROM hrs where hrID='${hrID}'`)
+    const result = await query(`SELECT *  FROM hr_data where hrID='${hrID}'`)
     res.status(200).json(result[0])
   } catch (err) {
     console.log("Failed to fetch details of ", hrID);
@@ -814,7 +850,7 @@ app.put("/hr-profile/:hrID", async (req, res) => {
   } = req.body;
 
   const queryStr = `
-    UPDATE hrs 
+    UPDATE hr_data
     SET 
       fullName = '${fullName}',
       email = '${email}',
@@ -843,7 +879,7 @@ app.put("/hr-profile/:hrID", async (req, res) => {
 app.get('/hr_data/:id', async (req, res) => {
   const { id } = req.params;
   try {
-    const rows = await query('SELECT * FROM hrs WHERE HRid = ?', [id]);
+    const rows = await query('SELECT * FROM hr_data WHERE HRid = ?', [id]);
     if (rows.length === 0) {
       return res.status(404).json({ message: 'HR not found' });
     }
@@ -860,7 +896,7 @@ app.put('/hr_data/:id', async (req, res) => {
   const { id } = req.params;
   const updatedHr = req.body;
   try {
-    const result = await query('UPDATE hrs SET ? WHERE HRid = ?', [updatedHr, id]);
+    const result = await query('UPDATE hr_data SET ? WHERE HRid = ?', [updatedHr, id]);
 
     if (result.affectedRows === 0) {
       return res.status(404).json({ message: 'HR not found' });
@@ -879,7 +915,7 @@ app.delete('/hr_data/:id', async (req, res) => {
   const { id } = req.params;
 
   try {
-    const [result] = await query('DELETE FROM hrs WHERE HRid = ?', [id]);
+    const [result] = await query('DELETE FROM hr_data WHERE HRid = ?', [id]);
 
     if (result.affectedRows === 0) {
       return res.status(404).json({ message: 'HR not found' });
@@ -925,7 +961,7 @@ app.get("/applicant-history/", async (req, res) => {
   const { candidateID = '', name = '', email = "", mobileNumber = "" } = req.query;
   console.log(candidateID, email, name, mobileNumber)
   try {
-    const result = await query(`SELECT * FROM interns WHERE candidateID='${candidateID}' OR fullName='${name}' OR email='${email}' OR mobileNo='${mobileNumber}'`)
+    const result = await query(`SELECT * FROM intern_data WHERE candidateID='${candidateID}' OR fullName='${name}' OR email='${email}' OR mobileNo='${mobileNumber}'`)
     if (result) {
       res.status(200).json(result[0])
     }
@@ -987,11 +1023,11 @@ app.put("/applications/status", async (req, res) => {
     // Check if ids is an array
     if (Array.isArray(ids)) {
       const placeholders = ids.map(() => '?').join(',');
-      const queryStr = `UPDATE applied_Students SET status=? WHERE applicationID IN (${placeholders})`;
+      const queryStr = `UPDATE applied_students SET status=? WHERE applicationID IN (${placeholders})`;
       const result = await query(queryStr, [status, ...ids]);
       console.log(result);
     } else {
-      const result = await query('UPDATE applied_Students SET status=? WHERE applicationID=?', [status, ids]);
+      const result = await query('UPDATE applied_students SET status=? WHERE applicationID=?', [status, ids]);
       console.log(result);
     }
 
@@ -1004,25 +1040,7 @@ app.put("/applications/status", async (req, res) => {
 
 
 //GETTING APPLICANT DETAILS FOR PARTICULAR JOBID
-app.get('/applications/:jobId', async (req, res) => {
-  const { jobId } = req.params;
-  const sql = `SELECT * FROM applied_students where jobId='${jobId}'`;
-  //console.log("got  here")
-  try {
-    const rows = await query(sql);
 
-    // Encode binary data to base64
-    const response = rows.map(row => ({
-      ...row,
-      resume: row.resume ? row.resume.toString('base64') : null
-    }));
-
-    res.status(200).json(response); // Send back the modified rows
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ message: 'Server Error' });
-  }
-});
 
 //GETTING APPLICATIONS FOR ALL COMPANIES OR PARTICULAR COMPANIES for SA and HR
 app.get('/applications', async (req, res) => {
@@ -1169,7 +1187,7 @@ app.get('/statistics/:status', async (req, res) => {
 app.get('/job-applicants/:status', async (req, res) => {
   const { status } = req.params
   console.log("got  here hello")
-  const sql = `SELECT * FROM applied_Students WHERE status="${status}"`;
+  const sql = `SELECT * FROM applied_students WHERE status="${status}"`;
 
   try {
     const rows = await query(sql);
@@ -1357,7 +1375,7 @@ app.post("/accept-interns", async (req, res) => {
   try {
     // Query existing interns by email or mobile number
     const existingInterns = await query(
-      'SELECT email, mobileNo FROM interns WHERE email IN (?) OR mobileNo IN (?)',
+      'SELECT email, mobileNo FROM intern_data WHERE email IN (?) OR mobileNo IN (?)',
       [
         interns.map(intern => intern.email),
         interns.map(intern => intern.mobileNo)
@@ -1374,7 +1392,7 @@ app.post("/accept-interns", async (req, res) => {
       if (!existingEmails.has(intern.email) && !existingPhones.has(intern.mobileNo)) {
         // Insert intern if email or mobile number does not exist
         await query(
-          'INSERT INTO interns (fullName, email, mobileNo, altMobileNo, domain, belongedToVasaviFoundation, address, batchNo, modeOfInternship) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
+          'INSERT INTO intern_data (fullName, email, mobileNo, altMobileNo, domain, belongedToVasaviFoundation, address, batchNo, modeOfInternship) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
           [
             intern.fullName,
             intern.email,
@@ -1405,6 +1423,7 @@ app.post("/accept-interns", async (req, res) => {
       );
     }
 
+    // Send confirmation email to accepted interns
     const mailOptions = {
       subject: 'Registration Success',
       text: `Your request is approved`,
@@ -1473,764 +1492,743 @@ app.delete('/delete-job/:jobId', async (req, res) => {
 
 
 app.get('/quizData/:token', async (req, res) => {
-  const token = req.params.token;
-
-  try {
-    const [quizData] = await pool.query('SELECT pages_data FROM quiz WHERE token = ?', [token]);
-    const [responsesData] = await pool.query('SELECT responses FROM responses WHERE token = ?', [token]);
-    const [internData] = await pool.query('SELECT name, email FROM interns WHERE id = ?', [req.query.userId]);
-    console.log("Quiz Data", quizData);
-    if (quizData.length === 0 || responsesData.length === 0 || internData.length === 0) {
-      return res.status(404).json({ message: 'Data not found' });
+    const token = req.params.token;
+  
+    try {
+      const [quizData] = await query('SELECT pages_data FROM quiz WHERE token = ?', [token]);
+      const [responsesData] = await query('SELECT responses FROM responses WHERE token = ?', [token]);
+      const [internData] = await query('SELECT name, email FROM intern_data WHERE id = ?', [req.query.userId]);
+      console.log("Quiz Data", quizData);
+      if (quizData.length === 0 || responsesData.length === 0 || internData.length === 0) {
+        return res.status(404).json({ message: 'Data not found' });
+      }
+  
+      const pagesData = JSON.parse(quizData[0].pages_data);
+      const responses = JSON.parse(responsesData[0].responses);
+      const internDetails = internData[0];
+  
+      const submissionData = {
+        dateSubmitted: responses.dateSubmitted,
+        score: responses.score,
+        duration: responses.duration,
+        quizTitle: responses.quizTitle,
+        quizDescription: responses.quizDescription,
+        internDetails: internDetails
+      };
+  
+      res.json({ pagesData, responses: responses.answers, submissionData });
+    } catch (error) {
+      console.error('Error fetching quiz data:', error);
+      res.status(500).json({ message: 'Internal server error' });
     }
-
-    const pagesData = JSON.parse(quizData[0].pages_data);
-    const responses = JSON.parse(responsesData[0].responses);
-    const internDetails = internData[0];
-
-    const submissionData = {
-      dateSubmitted: responses.dateSubmitted,
-      score: responses.score,
-      duration: responses.duration,
-      quizTitle: responses.quizTitle,
-      quizDescription: responses.quizDescription,
-      internDetails: internDetails
-    };
-
-    res.json({ pagesData, responses: responses.answers, submissionData });
-  } catch (error) {
-    console.error('Error fetching quiz data:', error);
-    res.status(500).json({ message: 'Internal server error' });
-  }
-});
-
-
-app.post('/update-quiz-status', (req, res) => {
-  const { quizId, status } = req.body;
-  const query = 'UPDATE quiz_data SET status = ? WHERE token = ?';
-
-  pool.query(query, [status, quizId], (error, results) => {
-    if (error) {
-      console.error('Error updating quiz status', error);
-      return res.status(500).json({ success: false, message: 'Failed to update quiz status' });
-    }
-    res.json({ success: true, message: 'Quiz status updated successfully' });
   });
-});
-
-app.post('/publish-quiz', (req, res) => {
-  const { token, link } = req.body;
-  const updateQuery = `
-    UPDATE quiz_data
-    SET status = 'Published', quiz_link = ?
-    WHERE token = ?
-  `;
-
-  pool.query(updateQuery, [link, token], (err, result) => {
-    if (err) {
-      console.log('Error updating quiz status:', err);
-      res.status(500).send('Error updating quiz status');
-      return;
-    }
-    res.send('Quiz published and status updated');
+  
+  
+  app.post('/update-quiz-status', (req, res) => {
+    const { quizId, status } = req.body;
+    const query = 'UPDATE quiz_data SET status = ? WHERE token = ?';
+  
+    pool.query(query, [status, quizId], (error, results) => {
+      if (error) {
+        console.error('Error updating quiz status', error);
+        return res.status(500).json({ success: false, message: 'Failed to update quiz status' });
+      }
+      res.json({ success: true, message: 'Quiz status updated successfully' });
+    });
   });
-});
-
-app.post('/assign-quiz-to-domain', (req, res) => {
-  const { domain, quizId } = req.body;
-  pool.query('SELECT candidateID FROM interns WHERE domain = ?', [domain], (err, users) => {
-
-    if (err) throw err;
-    const userIds = users.map(user => user.candidateID);
-    const values = userIds.map(userId => [userId, quizId]);
-    console.log(userIds);
-    pool.query('INSERT INTO user_quizzes (internID, quiz_id) VALUES ?', [values], (err, result) => {
+  
+  app.post('/publish-quiz', (req, res) => {
+    const { token, link } = req.body;
+    const updateQuery = `
+      UPDATE quiz_data
+      SET status = 'Published', quiz_link = ?
+      WHERE token = ?
+    `;
+  
+    pool.query(updateQuery, [link, token], (err, result) => {
+      if (err) {
+        console.log('Error updating quiz status:', err);
+        res.status(500).send('Error updating quiz status');
+        return;
+      }
+      res.send('Quiz published and status updated');
+    });
+  });
+  
+  app.post('/assign-quiz-to-domain', (req, res) => {
+    const { domain, quizId } = req.body;
+    pool.query('SELECT candidateID FROM intern_data WHERE domain = ?', [domain], (err, users) => {
+  
       if (err) throw err;
+      const userIds = users.map(user => user.candidateID);
+      const values = userIds.map(userId => [userId, quizId]);
+      console.log(userIds);
+      pool.query('INSERT INTO user_quizzes (internID, quiz_id) VALUES ?', [values], (err, result) => {
+        if (err) throw err;
+        res.json({ success: true });
+      });
+    });
+  });
+  app.post('/assign-quiz-to-user', (req, res) => {
+    const { quizId, userIds } = req.body;
+    const values = userIds.map(userId => [userId, quizId]);
+  
+    pool.query('INSERT INTO user_quizzes (internID, quiz_id) VALUES ?', [values], (err, result) => {
+      if (err) {
+        console.error('Error assigning quiz:', err);
+        res.status(500).json({ success: false, message: 'Failed to assign quiz' });
+      } else {
+        res.json({ success: true, message: 'Quiz assigned successfully' });
+      }
+    });
+  });
+  
+  
+  app.get('/user-quizzes/:userId', (req, res) => {
+    const { userId } = req.params;
+    console.log("userID", userId);
+    const quizIdsQuery = `
+        SELECT quiz_id, status
+        FROM user_quizzes 
+        WHERE internID = ?  
+    `;
+    pool.query(quizIdsQuery, [userId], (err, quizIdResults) => {
+      if (err) {
+        console.error('Error fetching quiz IDs:', err);
+        res.status(500).send('Error fetching quiz IDs');
+        return;
+      }
+  
+      // Extract quiz IDs from results
+      const quizIds = quizIdResults.map(row => row.quiz_id);
+      const statuses = quizIdResults.reduce((acc, row) => {
+        acc[row.quiz_id] = row.status;
+        return acc;
+      }, {});
+  
+      if (quizIds.length === 0) {
+        res.json([]);
+        return;
+      }
+      const quizzesQuery = `
+            SELECT * 
+            FROM quiz_data 
+            WHERE token IN (?)
+        `;
+      pool.query(quizzesQuery, [quizIds], (err, quizzesResults) => {
+        if (err) {
+          console.error('Error fetching quizzes:', err);
+          res.status(500).send('Error fetching quizzes');
+          return;
+        }
+  
+        // Add the status to each quiz object
+        const quizzesWithStatus = quizzesResults.map(quiz => ({
+          ...quiz,
+          status: statuses[quiz.token] || null // Use the status from the earlier query
+        }));
+  
+        res.json(quizzesWithStatus);
+      });
+    });
+  });
+  
+  app.get('/quiz_data/:token', (req, res) => {
+    const { token } = req.params;
+    console.log("token", token);
+    const quizQuery = `
+        SELECT 
+            uq.quiz_id, 
+            uq.internID, 
+            uq.status,
+            i.fullName AS user_name, 
+            i.email AS user_email, 
+            i.domain AS user_domain
+        FROM user_quizzes uq
+        JOIN intern_data i ON uq.internID = i.candidateID
+        WHERE uq.quiz_id = ?
+    `;
+  
+    pool.query(quizQuery, [token], (err, quizResults) => {
+      if (err) {
+        console.error('Error fetching quiz data:', err);
+        res.status(500).send('Error fetching quiz data');
+        return;
+      }
+  
+      if (quizResults.length === 0) {
+        res.status(404).send('Quiz not found');
+        return;
+      }
+      console.log(quizResults);
+      res.json(quizResults);
+  
+    });
+  });
+  
+  app.post('/submit-quiz', async (req, res) => {
+    try {
+      const { userId, token, responses, startTime, endTime, duration } = req.body;
+  
+      const existingSubmission = await query(
+        'SELECT * FROM responses WHERE user_id = ? AND token = ?',
+        [userId, token]
+      );
+  
+      if (existingSubmission.length > 0) {
+        return res.status(400).json({ message: 'Quiz already submitted.' });
+      }
+  
+      await query(
+        'INSERT INTO responses (user_id, token, responses, start_time, end_time, duration) VALUES (?, ?, ?, ?, ?, ?)',
+        [userId, token, JSON.stringify(responses), startTime, endTime, duration]
+      );
+  
+      res.status(200).json({ message: 'Quiz submitted successfully.' });
+    } catch (error) {
+      console.error('Error submitting quiz:', error);
+      res.status(500).json({ message: 'Error submitting quiz' });
+    }
+  });
+  
+  
+  
+  app.post('/submit-response', (req, res) => {
+    const { userId, quizId, responses } = req.body;
+  
+    const query = 'INSERT INTO response (user_id, quiz_id, question_id, answer) VALUES ?';
+    const values = responses.map(response => [userId, quizId, response.questionId, response.answer]);
+  
+    pool.query(query, [values], (err, results) => {
+      if (err) {
+        console.error('Error saving responses:', err);
+        res.status(500).send('Error saving responses');
+        return;
+      }
       res.json({ success: true });
     });
   });
-});
-app.post('/assign-quiz-to-user', (req, res) => {
-  const { quizId, userIds } = req.body;
-  const values = userIds.map(userId => [userId, quizId]);
-
-  pool.query('INSERT INTO user_quizzes (internID, quiz_id) VALUES ?', [values], (err, result) => {
-    if (err) {
-      console.error('Error assigning quiz:', err);
-      res.status(500).json({ success: false, message: 'Failed to assign quiz' });
-    } else {
-      res.json({ success: true, message: 'Quiz assigned successfully' });
-    }
+  
+  // Update quiz status in user_quizzes table
+  app.put('/update-user-quiz-status/:userId/:quizId', (req, res) => {
+    const { userId, quizId } = req.params;
+    const query = 'UPDATE user_quizzes SET status = ? WHERE internID = ? AND quiz_id = ?';
+  
+    // Set the status to true (or false if that's the desired behavior)
+    const status = true;
+  
+    pool.query(query, [status, userId, quizId], (error, results) => {
+      if (error) {
+        console.error('Error updating quiz status:', error);
+        res.status(500).json({ error: 'An error occurred while updating the quiz status' });
+      } else {
+        res.status(200).json({ message: 'Quiz status updated successfully' });
+      }
+    });
   });
-});
-
-
-app.get('/user-quizzes/:userId', (req, res) => {
-  const { userId } = req.params;
-  console.log("userID", userId);
-  const quizIdsQuery = `
-      SELECT quiz_id, status
-      FROM user_quizzes 
-      WHERE internID = ?  
-  `;
-  pool.query(quizIdsQuery, [userId], (err, quizIdResults) => {
-    if (err) {
-      console.error('Error fetching quiz IDs:', err);
-      res.status(500).send('Error fetching quiz IDs');
-      return;
-    }
-
-    // Extract quiz IDs from results
-    const quizIds = quizIdResults.map(row => row.quiz_id);
-    const statuses = quizIdResults.reduce((acc, row) => {
-      acc[row.quiz_id] = row.status;
-      return acc;
-    }, {});
-
-    if (quizIds.length === 0) {
-      res.json([]);
-      return;
-    }
-    const quizzesQuery = `
-          SELECT * 
-          FROM quiz_data 
-          WHERE token IN (?)
-      `;
-    pool.query(quizzesQuery, [quizIds], (err, quizzesResults) => {
+  
+  app.get('/quiz-responses/:token', async (req, res) => {
+    const { token } = req.params;
+    await query(`SELECT q.pages_data, r.id AS response_id, r.token, r.responses, r.start_time, r.end_time, r.duration, i.fullName AS user_name, i.email AS user_email, i.mobileNo, i.altMobileNo, i.domain, res.score, res.grade FROM responses r JOIN intern_data i ON r.user_id = i.candidateID LEFT JOIN (SELECT quiz_token, user_id, score, grade, percentage FROM results WHERE (quiz_token, user_id, id) IN (SELECT quiz_token, user_id, MAX(id) FROM results GROUP BY quiz_token, user_id)) res ON r.token = res.quiz_token AND i.candidateID = res.user_id JOIN quiz q ON r.token = q.token JOIN user_quizzes uq ON uq.quiz_id = q.id AND uq.internID = r.user_id WHERE r.token = ? AND uq.status = 1`, [token], (err, results) => {
       if (err) {
-        console.error('Error fetching quizzes:', err);
-        res.status(500).send('Error fetching quizzes');
+        console.error('Error fetching quiz responses:', err);
+        return res.status(500).json({ error: 'Internal server error' });
+      }
+  
+      if (results.length === 0) {
+        return res.status(404).json({ error: 'No responses found for this quiz' });
+      }
+  
+      const formattedResults = results.map(row => ({
+        pages_data: JSON.parse(row.pages_data),
+        no_of_pages: row.no_of_pages,
+        user_name: row.user_name,
+        user_email: row.user_email,
+        mobileNo: row.mobileNo,
+        altMobileNo: row.altMobileNo,
+        domain: row.domain,
+        belongedToVasaviFoundation: row.belongedToVasaviFoundation,
+        address: row.address,
+        batchNo: row.batchNo,
+        modeOfInternship: row.modeOfInternship,
+        start_time: row.start_time,
+        end_time: row.end_time,
+        duration: row.duration,
+        score: row.score,
+        grade: row.grade,
+        percentage: row.percentage,
+        responses: JSON.parse(row.responses)
+      }));
+  
+      res.json({
+        token: token,
+        responses: formattedResults,
+        pages_data: JSON.parse(results[0].pages_data),
+        no_of_pages: results[0].no_of_pages
+      });
+    });
+  });
+  
+  
+  
+  app.post('/addFolder', (req, res) => {
+    const { folder } = req.body;
+    const query = 'INSERT INTO quiz_data (folder_name) VALUES (?)';
+    pool.query(query, [folder], (err, result) => {
+      if (err) {
+        console.error('Error adding folder:', err);
+        res.status(500).send('Failed to add folder');
         return;
       }
-
-      // Add the status to each quiz object
-      const quizzesWithStatus = quizzesResults.map(quiz => ({
-        ...quiz,
-        status: statuses[quiz.token] || null // Use the status from the earlier query
-      }));
-
-      res.json(quizzesWithStatus);
+      res.status(200).send('Folder added successfully');
     });
   });
-});
-
-app.get('/quiz_data/:token', (req, res) => {
-  const { token } = req.params;
-  console.log("token", token);
-  const quizQuery = `
-      SELECT 
-          uq.quiz_id, 
-          uq.internID, 
-          uq.status,
-          i.fullName AS user_name, 
-          i.email AS user_email, 
-          i.domain AS user_domain
-      FROM user_quizzes uq
-      JOIN interns i ON uq.internID = i.candidateID
-      WHERE uq.quiz_id = ?
-  `;
-
-  pool.query(quizQuery, [token], (err, quizResults) => {
-    if (err) {
-      console.error('Error fetching quiz data:', err);
-      res.status(500).send('Error fetching quiz data');
-      return;
-    }
-
-    if (quizResults.length === 0) {
-      res.status(404).send('Quiz not found');
-      return;
-    }
-    console.log(quizResults);
-    res.json(quizResults);
-
-  });
-});
-
-app.post('/submit-quiz', async (req, res) => {
-  try {
-    const { userId, token, responses, startTime, endTime, duration } = req.body;
-
-    const existingSubmission = await pool.query(
-      'SELECT * FROM responses WHERE user_id = ? AND token = ?',
-      [userId, token]
-    );
-
-    if (existingSubmission.length > 0) {
-      return res.status(400).json({ message: 'Quiz already submitted.' });
-    }
-
-    await pool.query(
-      'INSERT INTO responses (user_id, token, responses, start_time, end_time, duration) VALUES (?, ?, ?, ?, ?, ?)',
-      [userId, token, JSON.stringify(responses), startTime, endTime, duration]
-    );
-
-    res.status(200).json({ message: 'Quiz submitted successfully.' });
-  } catch (error) {
-    console.error('Error submitting quiz:', error);
-    res.status(500).json({ message: 'Error submitting quiz' });
-  }
-});
-
-
-
-app.post('/submit-response', (req, res) => {
-  const { userId, quizId, responses } = req.body;
-
-  const query = 'INSERT INTO response (user_id, quiz_id, question_id, answer) VALUES ?';
-  const values = responses.map(response => [userId, quizId, response.questionId, response.answer]);
-
-  pool.query(query, [values], (err, results) => {
-    if (err) {
-      console.error('Error saving responses:', err);
-      res.status(500).send('Error saving responses');
-      return;
-    }
-    res.json({ success: true });
-  });
-});
-
-// Update quiz status in user_quizzes table
-app.put('/update-user-quiz-status/:userId/:quizId', (req, res) => {
-  const { userId, quizId } = req.params;
-  const query = 'UPDATE user_quizzes SET status = ? WHERE internID = ? AND quiz_id = ?';
-
-  // Set the status to true (or false if that's the desired behavior)
-  const status = true;
-
-  pool.query(query, [status, userId, quizId], (error, results) => {
-    if (error) {
-      console.error('Error updating quiz status:', error);
-      res.status(500).json({ error: 'An error occurred while updating the quiz status' });
-    } else {
-      res.status(200).json({ message: 'Quiz status updated successfully' });
-    }
-  });
-});
-
-app.get('/quiz-responses/:token', (req, res) => {
-  const { token } = req.params;
-  console.log("Token :", token);
-  const query = `
-  SELECT 
-      q.pages_data,
-      r.id AS response_id,
-      r.token,
-      r.responses,
-      r.start_time,
-      r.end_time,
-      r.duration,
-      i.fullName AS user_name,
-      i.email AS user_email,
-      i.mobileNo,
-      i.altMobileNo,
-      i.domain,
-      res.score,
-      res.grade
-  FROM responses r
-  JOIN interns i ON r.user_id = i.candidateID
-  LEFT JOIN (
-      SELECT quiz_token, user_id, score, grade, percentage
-      FROM results
-      WHERE (quiz_token, user_id, id) IN (
-          SELECT quiz_token, user_id, MAX(id)
-          FROM results
-          GROUP BY quiz_token, user_id
-      )
-  ) res ON r.token = res.quiz_token AND i.candidateID = res.user_id
-  JOIN quiz q ON r.token = q.token
-  WHERE r.token = ?
-  `;
-
-  pool.query(query, [token], (err, results) => {
-    if (err) {
-      console.error('Error fetching quiz responses:', err);
-      return res.status(500).json({ error: 'Internal server error' });
-    }
-
-    if (results.length === 0) {
-      return res.status(404).json({ error: 'No responses found for this quiz' });
-    }
-
-    const formattedResults = results.map(row => ({
-      pages_data: JSON.parse(row.pages_data),
-      user_name: row.user_name,
-      user_email: row.user_email,
-      domain: row.domain,
-      start_time: row.start_time,
-      end_time: row.end_time,
-      duration: row.duration,
-      score: row.score,
-      grade: row.grade,
-      responses: JSON.parse(row.responses)
-    }));
-    
-    res.json({
-      token: token,
-      responses: formattedResults,
-      pages_data: JSON.parse(results[0].pages_data) 
-    });
-  });
-});
-
-
-
-app.post('/addFolder', (req, res) => {
-  const { folder } = req.body;
-  const query = 'INSERT INTO quiz_data (folder_name) VALUES (?)';
-  pool.query(query, [folder], (err, result) => {
-    if (err) {
-      console.error('Error adding folder:', err);
-      res.status(500).send('Failed to add folder');
-      return;
-    }
-    res.status(200).send('Folder added successfully');
-  });
-});
-
-app.post('/addSubfolder', (req, res) => {
-  const { folder, subfolder } = req.body;
-  const query = 'INSERT INTO quiz_data (folder_name, subfolder_name) VALUES (?, ?)';
-  pool.query(query, [folder, subfolder], (err, result) => {
-    if (err) {
-      console.error('Error adding subfolder:', err);
-      res.status(500).send('Failed to add subfolder');
-      return;
-    }
-    res.status(200).send('Subfolder added successfully');
-  });
-});
-
-app.post('/addQuiz', (req, res) => {
-  const { folder, subfolder, quiz, type, token } = req.body;
-  const query = 'INSERT INTO quiz_data (folder_name, subfolder_name, quiz_name, quiz_type, token) VALUES (?, ?, ?, ?, ?)';
-  pool.query(query, [folder, subfolder, quiz, type, token], (err, result) => {
-    if (err) {
-      console.error('Error adding quiz:', err);
-      res.status(500).send('Failed to add quiz');
-      return;
-    }
-    res.status(200).send('Quiz added successfully');
-  });
-});
-
-app.get('/getData', (req, res) => {
-  const query = 'SELECT * FROM quiz_data';
-  pool.query(query, (err, results) => {
-    if (err) {
-      console.error('Error fetching data:', err);
-      res.status(500).send('Failed to fetch data');
-      return;
-    }
-    res.status(200).json(results);
-  });
-});
-
-app.get('/get-quiz/:token', (req, res) => {
-  const { token } = req.params;
-  const query = 'SELECT * FROM quiz WHERE token = ?';
-  pool.query(query, [token], (err, results) => {
-    if (err) {
-      console.error('Error fetching quiz:', err);
-      res.status(500).send('Failed to fetch quiz');
-      return;
-    }
-    if (results.length === 0) {
-      res.status(404).send('Quiz not found');
-      return;
-    }
-    res.status(200).json(results[0]);
-  });
-});
-
-
-app.get('/calculate-results/:quizToken/:userId', (req, res) => {
-  const { quizToken, userId } = req.params;
-
-  const correctAnswersQuery = `
-      SELECT pages_data 
-      FROM quiz 
-      WHERE token = ?
-  `;
-
-  const studentResponsesQuery = `
-      SELECT responses 
-      FROM responses 
-      WHERE token = ? AND user_id = ?
-  `;
-
-  const existingResultQuery = `
-      SELECT * 
-      FROM results 
-      WHERE user_id = ? AND quiz_token = ?
-  `;
-
-  const insertResultQuery = `
-      INSERT INTO results (user_id, quiz_token, score, grade)
-      VALUES (?, ?, ?, ?)
-  `;
-
-  const updateResultQuery = `
-      UPDATE results 
-      SET score = ?, grade = ?
-      WHERE user_id = ? AND quiz_token = ?
-  `;
-
-  pool.query(correctAnswersQuery, [quizToken], (err, result) => {
-    if (err) throw err;
-
-    const correctAnswers = JSON.parse(result[0].pages_data);
-    pool.query(studentResponsesQuery, [quizToken, userId], (err, result) => {
-      if (err) throw err;
-
-      const studentResponses = JSON.parse(result[0].responses);
-      let score = 0;
-      let totalQuestions = 0;
-
-      correctAnswers.forEach(page => {
-        page.question_list.forEach(question => {
-          totalQuestions += 1;
-          const studentResponse = studentResponses.find(response => response.questionText === question.question_text);
-          if (studentResponse && studentResponse.answer === question.correct_answer) {
-            score += 1;
-          }
-        });
-      });
-
-      const percentage = (score / totalQuestions) * 100;
-
-      let grade;
-      if (percentage >= 90) {
-        grade = 'A';
-      } else if (percentage >= 80) {
-        grade = 'B';
-      } else if (percentage >= 70) {
-        grade = 'C';
-      } else if (percentage >= 60) {
-        grade = 'D';
-      } else {
-        grade = 'F';
+  
+  app.post('/addSubfolder', (req, res) => {
+    const { folder, subfolder } = req.body;
+    const query = 'INSERT INTO quiz_data (folder_name, subfolder_name) VALUES (?, ?)';
+    pool.query(query, [folder, subfolder], (err, result) => {
+      if (err) {
+        console.error('Error adding subfolder:', err);
+        res.status(500).send('Failed to add subfolder');
+        return;
       }
-
-      pool.query(existingResultQuery, [userId, quizToken], (err, result) => {
-        if (err) throw err;
-
-        if (result.length > 0) {
-          // Update existing result
-          pool.query(updateResultQuery, [score, grade, userId, quizToken], (err) => {
-            if (err) throw err;
-            res.json({ score, grade });
-          });
-        } else {
-          // Insert new result
-          pool.query(insertResultQuery, [userId, quizToken, score, grade], (err) => {
-            if (err) throw err;
-            res.json({ score, grade });
-          });
-        }
-      });
+      res.status(200).send('Subfolder added successfully');
     });
   });
-});
-
-app.get('/quiz-analysis/:userId/:quizToken', (req, res) => {
-  const { userId, quizToken } = req.params;
-  const analysisQuery = `
-      SELECT responses.responses, responses.start_time, responses.end_time, responses.duration, results.score, results.grade, quiz.pages_data
-      FROM responses
-      INNER JOIN results ON responses.user_id = results.user_id AND responses.token = results.quiz_token
-      INNER JOIN quiz ON responses.token = quiz.token
-      WHERE responses.user_id = ? AND responses.token = ?
-  `;
-  pool.query(analysisQuery, [userId, quizToken], (err, results) => {
-    if (err) {
-      console.error('Error fetching quiz analysis:', err);
-      return res.status(500).json({ error: 'An error occurred while fetching quiz analysis' });
-    }
-
-    if (results.length === 0) {
-      return res.status(404).json({ error: 'Analysis not found' });
-    }
-
-    const responseData = results[0];
-    let responses, pagesData;
-    try {
-      responses = JSON.parse(responseData.responses);
-      pagesData = responseData.pages_data ? JSON.parse(responseData.pages_data) : [];
-    } catch (parseError) {
-      console.error('Error parsing JSON data:', parseError);
-      return res.status(500).json({ error: 'Error parsing quiz data' });
-    }
-    if (!Array.isArray(pagesData) || pagesData.length === 0) {
-      console.error('pagesData is not in the expected format');
-      return res.status(500).json({ error: 'Invalid quiz data structure' });
-    }
-
-    const flattenedQuestions = pagesData.flatMap(page => page.question_list || []);
-
-    responses.forEach(response => {
-      const matchingQuestion = flattenedQuestions.find(question =>
-        question && question.question_text.trim() === response.questionText.trim()
-      );
-
-      if (matchingQuestion) {
-        response.correct_answer = matchingQuestion.correct_answer;
-        response.is_correct = response.answer === matchingQuestion.correct_answer;
-      } else {
-        console.warn(`No matching question found for: "${response.questionText}"`);
-        response.correct_answer = 'Not found';
-        response.is_correct = false;
+  
+  app.post('/addQuiz', (req, res) => {
+    const { folder, subfolder, quiz, type, token } = req.body;
+    const query = 'INSERT INTO quiz_data (folder_name, subfolder_name, quiz_name, quiz_type, token) VALUES (?, ?, ?, ?, ?)';
+    pool.query(query, [folder, subfolder, quiz, type, token], (err, result) => {
+      if (err) {
+        console.error('Error adding quiz:', err);
+        res.status(500).send('Failed to add quiz');
+        return;
       }
-    });
-
-    res.json({
-      responses,
-      start_time: responseData.start_time,
-      end_time: responseData.end_time,
-      duration: responseData.duration,
-      score: responseData.score,
-      grade: responseData.grade
+      res.status(200).send('Quiz added successfully');
     });
   });
-});
-
-app.post('/save-questions', (req, res) => {
-  const { token, no_of_pages, pages_data } = req.body;
-  if (!token || !no_of_pages || !pages_data) {
-    return res.status(400).send('Missing required fields');
-  }
-
-  const checkQuery = 'SELECT COUNT(*) AS count FROM quiz WHERE token = ?';
-  pool.query(checkQuery, [token], (err, result) => {
-    if (err) {
-      console.error('Error checking token existence:', err);
-      return res.status(500).send('Error checking token existence');
-    }
-
-    const rowExists = result[0].count > 0;
-
-    if (rowExists) {
-      const updateQuery = 'UPDATE quiz SET no_of_pages = ?, pages_data = ? WHERE token = ?';
-      pool.query(updateQuery, [no_of_pages, pages_data, token], (err, result) => {
-        if (err) {
-          console.error('Error updating questions:', err);
-          return res.status(500).send('Error updating questions');
-        }
-        res.status(200).send('Questions updated successfully');
-      });
-    } else {
-      const insertQuery = 'INSERT INTO quiz (token, no_of_pages, pages_data) VALUES (?, ?, ?)';
-      pool.query(insertQuery, [token, no_of_pages, pages_data], (err, result) => {
-        if (err) {
-          console.error('Error inserting questions:', err);
-          return res.status(500).send('Error inserting questions');
-        }
-        res.status(200).send('Questions added successfully');
-      });
-    }
-  });
-});
-
-app.get('/grades', (req, res) => {
-  const query = 'SELECT * FROM grades';
-  pool.query(query, (err, results) => {
-    if (err) throw err;
-    res.json(results);
-  });
-});
-
-app.post('/upload-data', (req, res) => {
-  const { token, no_of_pages, pages_data } = req.body;
-
-  const query = 'INSERT INTO quiz (token, no_of_pages, pages_data) VALUES (?, ?, ?)';
-  const params = { token, no_of_pages, pages_data };
-
-  pool.query(query, params, (err, result) => {
-    if (err) {
-      return res.status(500).send(err);
-    }
-    res.status(200).send('Bulk questions uploaded successfully');
-  });
-});
-
-const validateToken = (token) => {
-  return new Promise((resolve, reject) => {
-    const query = 'SELECT 1 FROM quiz WHERE token = ?';
-    pool.query(query, [token], (err, results) => {
-      if (err) return reject(err);
-      resolve(results.length > 0);
+  
+  app.get('/getData', (req, res) => {
+    const query = 'SELECT * FROM quiz_data';
+    pool.query(query, (err, results) => {
+      if (err) {
+        console.error('Error fetching data:', err);
+        res.status(500).send('Failed to fetch data');
+        return;
+      }
+      res.status(200).json(results);
     });
   });
-};
-
-app.get('/quiz-options/:token', async (req, res) => {
-  const { token } = req.params;
-  try {
+  
+  app.get('/get-quiz/:token', (req, res) => {
+    const { token } = req.params;
     const query = 'SELECT * FROM quiz WHERE token = ?';
     pool.query(query, [token], (err, results) => {
       if (err) {
-        console.error('Error fetching quiz options:', err);
-        return res.status(500).json({ error: 'Error fetching quiz options' });
+        console.error('Error fetching quiz:', err);
+        res.status(500).send('Failed to fetch quiz');
+        return;
       }
-      if (results.length > 0) {
-        const quizOptions = {
-          timeLimit: results[0].time_limit || '',
-          scheduleQuizFrom: results[0].schedule_quiz_from || '',
-          scheduleQuizTo: results[0].schedule_quiz_to || '',
-          qns_per_page: results[0].no_of_qns_per_page || '',
-          randomizeQuestions: results[0].randomize_questions || false,
-          confirmBeforeSubmission: results[0].confirm_before_submission || false,
-          showResultsAfterSubmission: results[0].show_results_after_submission || false,
-          showAnswersAfterSubmission: results[0].show_answers_after_submission || false,
-        };
-        return res.status(200).json(quizOptions);
-      } else {
-        return res.status(200).json({});
+      if (results.length === 0) {
+        res.status(404).send('Quiz not found');
+        return;
       }
+      res.status(200).json(results[0]);
     });
-  } catch (error) {
-    console.error('Error fetching quiz options:', error);
-    res.status(500).json({ error: 'Error fetching quiz options' });
-  }
-});
-
-
-app.post('/quiz-options', async (req, res) => {
-  const {
-    token,
-    timeLimit,
-    scheduleQuizFrom,
-    scheduleQuizTo,
-    qns_per_page,
-    randomizeQuestions,
-    confirmBeforeSubmission,
-    showResultsAfterSubmission,
-    showAnswersAfterSubmission,
-  } = req.body;
-
-  try {
-    const tokenExists = await validateToken(token);
-
-    const query = tokenExists
-      ? `UPDATE quiz SET
-              time_limit = ?, schedule_quiz_from = ?, schedule_quiz_to = ?, no_of_qns_per_page = ?,
-              randomize_questions = ?, confirm_before_submission = ?, show_results_after_submission = ?, show_answers_after_submission = ?
-              WHERE token = ?`
-      : `INSERT INTO quiz (
-              token, time_limit, schedule_quiz_from, schedule_quiz_to, no_of_qns_per_page,
-              randomize_questions, confirm_before_submission, show_results_after_submission, show_answers_after_submission
-              ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`;
-
-    const values = tokenExists
-      ? [timeLimit, scheduleQuizFrom, scheduleQuizTo, qns_per_page, randomizeQuestions, confirmBeforeSubmission, showResultsAfterSubmission, showAnswersAfterSubmission, token]
-      : [token, timeLimit, scheduleQuizFrom, scheduleQuizTo, qns_per_page, randomizeQuestions, confirmBeforeSubmission, showResultsAfterSubmission, showAnswersAfterSubmission];
-
-    pool.query(query, values, (err, results) => {
+  });
+  
+  
+  app.get('/calculate-results/:quizToken/:userId', (req, res) => {
+    const { quizToken, userId } = req.params;
+  
+    const correctAnswersQuery = `
+        SELECT pages_data 
+        FROM quiz 
+        WHERE token = ?
+    `;
+  
+    const studentResponsesQuery = `
+        SELECT responses 
+        FROM responses 
+        WHERE token = ? AND user_id = ?
+    `;
+  
+    const existingResultQuery = `
+        SELECT * 
+        FROM results 
+        WHERE user_id = ? AND quiz_token = ?
+    `;
+  
+    const insertResultQuery = `
+        INSERT INTO results (user_id, quiz_token, score, grade)
+        VALUES (?, ?, ?, ?)
+    `;
+  
+    const updateResultQuery = `
+        UPDATE results 
+        SET score = ?, grade = ?
+        WHERE user_id = ? AND quiz_token = ?
+    `;
+  
+    pool.query(correctAnswersQuery, [quizToken], (err, result) => {
+      if (err) throw err;
+  
+      const correctAnswers = JSON.parse(result[0].pages_data);
+      pool.query(studentResponsesQuery, [quizToken, userId], (err, result) => {
+        if (err) throw err;
+  
+        const studentResponses = JSON.parse(result[0].responses);
+        let score = 0;
+        let totalQuestions = 0;
+  
+        correctAnswers.forEach(page => {
+          page.question_list.forEach(question => {
+            totalQuestions += 1;
+            const studentResponse = studentResponses.find(response => response.questionText === question.question_text);
+            if (studentResponse && studentResponse.answer === question.correct_answer) {
+              score += 1;
+            }
+          });
+        });
+  
+        const percentage = (score / totalQuestions) * 100;
+  
+        let grade;
+        if (percentage >= 90) {
+          grade = 'A';
+        } else if (percentage >= 80) {
+          grade = 'B';
+        } else if (percentage >= 70) {
+          grade = 'C';
+        } else if (percentage >= 60) {
+          grade = 'D';
+        } else {
+          grade = 'F';
+        }
+  
+        pool.query(existingResultQuery, [userId, quizToken], (err, result) => {
+          if (err) throw err;
+  
+          if (result.length > 0) {
+            // Update existing result
+            pool.query(updateResultQuery, [score, grade, userId, quizToken], (err) => {
+              if (err) throw err;
+              res.json({ score, grade });
+            });
+          } else {
+            // Insert new result
+            pool.query(insertResultQuery, [userId, quizToken, score, grade], (err) => {
+              if (err) throw err;
+              res.json({ score, grade });
+            });
+          }
+        });
+      });
+    });
+  });
+  
+  app.get('/quiz-analysis/:userId/:quizToken', (req, res) => {
+    const { userId, quizToken } = req.params;
+    const analysisQuery = `
+        SELECT responses.responses, responses.start_time, responses.end_time, responses.duration, results.score, results.grade, quiz.pages_data
+        FROM responses
+        INNER JOIN results ON responses.user_id = results.user_id AND responses.token = results.quiz_token
+        INNER JOIN quiz ON responses.token = quiz.token
+        WHERE responses.user_id = ? AND responses.token = ?
+    `;
+    pool.query(analysisQuery, [userId, quizToken], (err, results) => {
       if (err) {
-        console.error(`Error ${tokenExists ? 'updating' : 'inserting'} quiz options:`, err);
-        return res.status(500).json({ error: `Error ${tokenExists ? 'updating' : 'inserting'} quiz options` });
+        console.error('Error fetching quiz analysis:', err);
+        return res.status(500).json({ error: 'An error occurred while fetching quiz analysis' });
       }
-      res.status(200).json({ message: `Quiz options ${tokenExists ? 'updated' : 'saved'} successfully` });
+  
+      if (results.length === 0) {
+        return res.status(404).json({ error: 'Analysis not found' });
+      }
+  
+      const responseData = results[0];
+      let responses, pagesData;
+      try {
+        responses = JSON.parse(responseData.responses);
+        pagesData = responseData.pages_data ? JSON.parse(responseData.pages_data) : [];
+      } catch (parseError) {
+        console.error('Error parsing JSON data:', parseError);
+        return res.status(500).json({ error: 'Error parsing quiz data' });
+      }
+      if (!Array.isArray(pagesData) || pagesData.length === 0) {
+        console.error('pagesData is not in the expected format');
+        return res.status(500).json({ error: 'Invalid quiz data structure' });
+      }
+  
+      const flattenedQuestions = pagesData.flatMap(page => page.question_list || []);
+  
+      responses.forEach(response => {
+        const matchingQuestion = flattenedQuestions.find(question =>
+          question && question.question_text.trim() === response.questionText.trim()
+        );
+  
+        if (matchingQuestion) {
+          response.correct_answer = matchingQuestion.correct_answer;
+          response.is_correct = response.answer === matchingQuestion.correct_answer;
+        } else {
+          console.warn(`No matching question found for: "${response.questionText}"`);
+          response.correct_answer = 'Not found';
+          response.is_correct = false;
+        }
+      });
+  
+      res.json({
+        responses,
+        start_time: responseData.start_time,
+        end_time: responseData.end_time,
+        duration: responseData.duration,
+        score: responseData.score,
+        grade: responseData.grade
+      });
     });
-  } catch (error) {
-    console.error('Error validating token:', error);
-    res.status(500).json({ error: 'Error validating token' });
-  }
-});
-
-app.get('/getAllData', async (req, res) => {
-  const query = 'SELECT * FROM quiz_data';
-  await pool.query(query, (err, results) => {
-    if (err) {
-      console.error('Error fetching data:', err);
-      res.status(500).send('Failed to fetch data');
-      return;
-    }
-    res.status(200).json(results);
   });
-});
-
-app.put('/renameQuiz', (req, res) => {
-  const { token } = req.params;
-  const { newName } = req.body;
-  const query = 'UPDATE quiz_data SET quiz_name = ? WHERE token = ?';
-  pool.query(query, [newName, token], (err, result) => {
-    if (err) {
-      console.error('Error renaming quiz:', err);
-      res.status(500).send('Failed to rename quiz');
-      return;
+  
+  app.post('/save-questions', (req, res) => {
+    const { token, no_of_pages, pages_data } = req.body;
+    if (!token || !no_of_pages || !pages_data) {
+      return res.status(400).send('Missing required fields');
     }
-    res.status(200).send('Quiz renamed successfully');
+  
+    const checkQuery = 'SELECT COUNT(*) AS count FROM quiz WHERE token = ?';
+    pool.query(checkQuery, [token], (err, result) => {
+      if (err) {
+        console.error('Error checking token existence:', err);
+        return res.status(500).send('Error checking token existence');
+      }
+  
+      const rowExists = result[0].count > 0;
+  
+      if (rowExists) {
+        const updateQuery = 'UPDATE quiz SET no_of_pages = ?, pages_data = ? WHERE token = ?';
+        pool.query(updateQuery, [no_of_pages, pages_data, token], (err, result) => {
+          if (err) {
+            console.error('Error updating questions:', err);
+            return res.status(500).send('Error updating questions');
+          }
+          res.status(200).send('Questions updated successfully');
+        });
+      } else {
+        const insertQuery = 'INSERT INTO quiz (token, no_of_pages, pages_data) VALUES (?, ?, ?)';
+        pool.query(insertQuery, [token, no_of_pages, pages_data], (err, result) => {
+          if (err) {
+            console.error('Error inserting questions:', err);
+            return res.status(500).send('Error inserting questions');
+          }
+          res.status(200).send('Questions added successfully');
+        });
+      }
+    });
   });
-});
-
-app.delete('/deleteQuiz/:token', (req, res) => {
-  const { token } = req.params;
-  const query = 'DELETE FROM quiz_data WHERE token = ?';
-  pool.query(query, [token], (err, result) => {
-    if (err) {
-      console.error('Error deleting quiz:', err);
-      res.status(500).send('Failed to delete quiz');
-      return;
-    }
-    res.status(200).send('Quiz deleted successfully');
+  
+  app.get('/grades', (req, res) => {
+    const query = 'SELECT * FROM grades';
+    pool.query(query, (err, results) => {
+      if (err) throw err;
+      res.json(results);
+    });
   });
-});
-
-app.get('/domains', (req, res) => {
-  const query = 'SELECT DISTINCT domain FROM interns';
-  pool.query(query, (err, results) => {
-    if (err) {
-      console.error('Error fetching domains:', err);
-      res.status(500).send('Error fetching domains');
-      return;
-    }
-    res.status(200).json(results);
+  
+  app.post('/upload-data', (req, res) => {
+    const { token, no_of_pages, pages_data } = req.body;
+  
+    const query = 'INSERT INTO quiz (token, no_of_pages, pages_data) VALUES (?, ?, ?)';
+    const params = { token, no_of_pages, pages_data };
+  
+    pool.query(query, params, (err, result) => {
+      if (err) {
+        return res.status(500).send(err);
+      }
+      res.status(200).send('Bulk questions uploaded successfully');
+    });
   });
-});
-
-app.get('/interns', (req, res) => {
-  const query = 'SELECT id, name, mail, domain FROM interns';
-  pool.query(query, (err, results) => {
-    if (err) {
-      console.error('Error fetching interns:', err);
-      res.status(500).send('Error fetching interns');
-      return;
+  
+  const validateToken = (token) => {
+    return new Promise((resolve, reject) => {
+      const query = 'SELECT 1 FROM quiz WHERE token = ?';
+      pool.query(query, [token], (err, results) => {
+        if (err) return reject(err);
+        resolve(results.length > 0);
+      });
+    });
+  };
+  
+  app.get('/quiz-options/:token', async (req, res) => {
+    const { token } = req.params;
+    try {
+      const query = 'SELECT * FROM quiz WHERE token = ?';
+      pool.query(query, [token], (err, results) => {
+        if (err) {
+          console.error('Error fetching quiz options:', err);
+          return res.status(500).json({ error: 'Error fetching quiz options' });
+        }
+        if (results.length > 0) {
+          const quizOptions = {
+            timeLimit: results[0].time_limit || '',
+            scheduleQuizFrom: results[0].schedule_quiz_from || '',
+            scheduleQuizTo: results[0].schedule_quiz_to || '',
+            qns_per_page: results[0].no_of_qns_per_page || '',
+            randomizeQuestions: results[0].randomize_questions || false,
+            confirmBeforeSubmission: results[0].confirm_before_submission || false,
+            showResultsAfterSubmission: results[0].show_results_after_submission || false,
+            showAnswersAfterSubmission: results[0].show_answers_after_submission || false,
+          };
+          return res.status(200).json(quizOptions);
+        } else {
+          return res.status(200).json({});
+        }
+      });
+    } catch (error) {
+      console.error('Error fetching quiz options:', error);
+      res.status(500).json({ error: 'Error fetching quiz options' });
     }
-    res.json(results);
   });
-});
-
-
-
-
-app.get('/interns/:id', (req, res) => {
-  const query = 'SELECT id, name, mail, domain FROM interns WHERE id = ?';
-  pool.query(query, [req.params.id], (err, results) => {
-    if (err) {
-      console.error('Error fetching intern:', err);
-      res.status(500).send('Error fetching intern data');
-      return;
+  
+  
+  app.post('/quiz-options', async (req, res) => {
+    const {
+      token,
+      timeLimit,
+      scheduleQuizFrom,
+      scheduleQuizTo,
+      qns_per_page,
+      randomizeQuestions,
+      confirmBeforeSubmission,
+      showResultsAfterSubmission,
+      showAnswersAfterSubmission,
+    } = req.body;
+  
+    try {
+      const tokenExists = await validateToken(token);
+  
+      const query = tokenExists
+        ? `UPDATE quiz SET
+                time_limit = ?, schedule_quiz_from = ?, schedule_quiz_to = ?, no_of_qns_per_page = ?,
+                randomize_questions = ?, confirm_before_submission = ?, show_results_after_submission = ?, show_answers_after_submission = ?
+                WHERE token = ?`
+        : `INSERT INTO quiz (
+                token, time_limit, schedule_quiz_from, schedule_quiz_to, no_of_qns_per_page,
+                randomize_questions, confirm_before_submission, show_results_after_submission, show_answers_after_submission
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`;
+  
+      const values = tokenExists
+        ? [timeLimit, scheduleQuizFrom, scheduleQuizTo, qns_per_page, randomizeQuestions, confirmBeforeSubmission, showResultsAfterSubmission, showAnswersAfterSubmission, token]
+        : [token, timeLimit, scheduleQuizFrom, scheduleQuizTo, qns_per_page, randomizeQuestions, confirmBeforeSubmission, showResultsAfterSubmission, showAnswersAfterSubmission];
+  
+      pool.query(query, values, (err, results) => {
+        if (err) {
+          console.error(`Error ${tokenExists ? 'updating' : 'inserting'} quiz options:`, err);
+          return res.status(500).json({ error: `Error ${tokenExists ? 'updating' : 'inserting'} quiz options` });
+        }
+        res.status(200).json({ message: `Quiz options ${tokenExists ? 'updated' : 'saved'} successfully` });
+      });
+    } catch (error) {
+      console.error('Error validating token:', error);
+      res.status(500).json({ error: 'Error validating token' });
     }
-    if (results.length === 0) {
-      res.status(404).send('Intern not found');
-      return;
-    }
-    res.json(results[0]);
   });
-});
-
-app.get('/submissions', (req, res) => {
-  const query = 'SELECT * FROM interns ORDER BY domain';
-  pool.query(query, (err, results) => {
-    if (err) {
-      console.error('Error fetching data:', err);
-      res.status(500).send('Error fetching data');
-      return;
-    }
-    res.status(200).json(results);
+  
+  app.get('/getAllData', async (req, res) => {
+    await query('SELECT * FROM quiz_data', (err, results) => {
+      if (err) {
+        console.error('Error fetching data:', err);
+        res.status(500).send('Failed to fetch data');
+        return;
+      }
+      res.status(200).json(results);
+    });
   });
-})
+  
+  app.put('/renameQuiz/:token', async (req, res) => {
+    const { token } = req.params;
+    const { name: newName } = req.body;
+    console.log(token, newName);
+    await query("UPDATE quiz_data SET quiz_name = ? WHERE token = ?", [newName, token], (err, result) => {
+      if (err) {
+        console.log('Error renaming quiz ');
+        console.error('Error renaming quiz:', err);
+        return res.status(500).send('Failed to rename quiz');
+      }
+      console.log("renamed successfully")
+      res.send('Quiz renamed successfully');
+    });
+  });
+  
+  
+  app.delete('/deleteQuiz/:token', (req, res) => {
+    const { token } = req.params;
+    const query = 'DELETE FROM quiz_data WHERE token = ?';
+    pool.query(query, [token], (err, result) => {
+      if (err) {
+        console.error('Error deleting quiz:', err);
+        res.status(500).send('Failed to delete quiz');
+        return;
+      }
+      res.status(200).send('Quiz deleted successfully');
+    });
+  });
+  
+  app.get('/domains', (req, res) => {
+    const query = 'SELECT DISTINCT domain FROM intern_data';
+    pool.query(query, (err, results) => {
+      if (err) {
+        console.error('Error fetching domains:', err);
+        res.status(500).send('Error fetching domains');
+        return;
+      }
+      res.status(200).json(results);
+    });
+  });
+  
+  app.get('/interns', (req, res) => {
+    const query = 'SELECT id, name, mail, domain FROM intern_data';
+    pool.query(query, (err, results) => {
+      if (err) {
+        console.error('Error fetching interns:', err);
+        res.status(500).send('Error fetching interns');
+        return;
+      }
+      res.json(results);
+    });
+  });
+  
+  
+  
+  
+  app.get('/interns/:id', (req, res) => {
+    const query = 'SELECT id, name, mail, domain FROM intern_data WHERE id = ?';
+    pool.query(query, [req.params.id], (err, results) => {
+      if (err) {
+        console.error('Error fetching intern:', err);
+        res.status(500).send('Error fetching intern data');
+        return;
+      }
+      if (results.length === 0) {
+        res.status(404).send('Intern not found');
+        return;
+      }
+      res.json(results[0]);
+    });
+  });
+  
+  app.get('/submissions', (req, res) => {
+    const query = 'SELECT * FROM intern_data ORDER BY domain';
+    pool.query(query, (err, results) => {
+      if (err) {
+        console.error('Error fetching data:', err);
+        res.status(500).send('Error fetching data');
+        return;
+      }
+      res.status(200).json(results);
+    });
+  })
+  
 
 
   app.get('/sa-job-applicants/', async (req, res) => {
@@ -2315,7 +2313,7 @@ app.get('/submissions', (req, res) => {
     const { hrId } = req.query
 
     try {
-      const rows = await query(`SELECT * FROM jobs WHERE postedBy = '${hrId}'`);
+      const rows = await query(`SELECT * FROM jobs WHERE postedBy = '${hrId}' ORDER BY postedOn DESC`);
   
       // Encode binary data to base64
       const response = rows.map(row => ({
