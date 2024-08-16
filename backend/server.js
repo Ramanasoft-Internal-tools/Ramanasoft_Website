@@ -799,7 +799,7 @@ app.get("/intern_data/:id", async (req, res) => {
 app.delete("/intern_data/:id", async (req, res) => {
   const internID = req.params.id;
   try {
-    const result = await query('DELETE FROM interns WHERE candidateID = ?', [internID]);
+    const result = await query('DELETE FROM intern_data WHERE candidateID = ?', [internID]);
 
     if (result.affectedRows > 0) {
       res.status(200).json({ message: 'Student data deleted successfully.' });
