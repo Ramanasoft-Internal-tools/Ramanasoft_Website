@@ -252,7 +252,7 @@ app.post('/register/intern', async (req, res) => {
       return res.status(401).json({
         message: 'Already registered, Wait for approval',
       });
-    }    else {
+    } else {
       const sql = 'INSERT INTO intern_requests (fullName, email, mobileNo, altMobileNo, address, batchno, modeOfInternship, belongedToVasaviFoundation, domain) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)';
 
       try {
@@ -343,6 +343,11 @@ app.post('/register/hr', async (req, res) => {
 });
 
 
+app.post('/update-profile/:id', async (req, res) => {
+  const internID = req.params.id;
+
+
+})
 
 //Superadmin api to add hr
 app.post('/add/hr', async (req, res) => {
@@ -513,14 +518,14 @@ app.post("/accept-hrs", async (req, res) => {
         processedHRs.map(hr => hr.email),
       ]);
     }
-        // Send confirmation email to accepted interns
-        const mailOptions = {
-          subject: 'Registration Success',
-          text: `Your request is approved`,
-        };
-        const emailPromises = acceptedHRs.map(hr => sendEmail(hr.email, mailOptions));
-        await Promise.all(emailPromises);
-    
+    // Send confirmation email to accepted interns
+    const mailOptions = {
+      subject: 'Registration Success',
+      text: `Your request is approved`,
+    };
+    const emailPromises = acceptedHRs.map(hr => sendEmail(hr.email, mailOptions));
+    await Promise.all(emailPromises);
+
     res.status(200).json({ accepted: acceptedHRs, rejected: rejectedHRs });
   } catch (error) {
     console.error('Error processing HRs:', error);
@@ -638,7 +643,7 @@ app.post('/SAlogin', [
 
 
 app.post("/post-job", async (req, res) => {
-  const { job, hrId,companyId } = req.body;
+  const { job, hrId, companyId } = req.body;
   console.log(req.body);
   try {
     // Convert lastDate to the proper format (YYYY-MM-DD)
@@ -646,7 +651,7 @@ app.post("/post-job", async (req, res) => {
 
     // Check for duplicate job entries
     const rows = await query(`
-      SELECT * FROM jobs WHERE companyName = ? AND Location = ? AND jobCategory = ? AND jobExperience = ? AND jobQualification = ? AND email = ? AND phone = ? AND lastDate = ? AND jobDescription = ? AND salary = ? AND applicationUrl = ? AND requiredSkills = ? AND jobType = ? AND jobTitle = ? AND postedBy = ?`, 
+  SELECT * FROM jobs WHERE companyName = ? AND Location = ? AND jobCategory = ? AND jobExperience = ? AND jobQualification = ? AND email = ? AND phone = ? AND lastDate = ? AND jobDescription = ? AND salary = ? AND applicationUrl = ? AND requiredSkills = ? AND jobType = ? AND jobTitle = ? AND postedBy = ?`,
       [
         job.companyName, job.jobCity, job.jobCategory,
         job.jobExperience, job.jobQualification, job.email, job.phone, lastDate,
@@ -660,13 +665,13 @@ app.post("/post-job", async (req, res) => {
 
     // Insert the job into the database
     await query(`
-      INSERT INTO jobs (companyName, Location, jobCategory, jobExperience, jobQualification, email, phone, postedOn, lastDate, jobDescription, salary, applicationUrl, requiredSkills, jobType, jobTitle, postedBy,status,companyID,openings,bond) 
-      VALUES (?, ?, ?, ?, ?, ?, ?, NOW(), ?, ?, ?, ?, ?, ?, ?, ?,'jd-received',?,?,?)`, 
+  INSERT INTO jobs (companyName, Location, jobCategory, jobExperience, jobQualification, email, phone, postedOn, lastDate, jobDescription, salary, applicationUrl, requiredSkills, jobType, jobTitle, postedBy,status,companyID)
+  VALUES (?, ?, ?, ?, ?, ?, ?, NOW(), ?, ?, ?, ?, ?, ?, ?, ?,'jd-received',?)`,
       [
         job.companyName, job.jobCity, job.jobCategory,
         job.jobExperience, job.jobQualification, job.email, job.phone, lastDate,
         job.jobDescription, job.salary, job.applicationUrl,
-        job.requiredSkills, job.jobType, job.jobTitle, hrId,companyId,job.openings,job.bond
+        job.requiredSkills, job.jobType, job.jobTitle, hrId, companyId
       ]);
 
     res.status(201).json({ message: 'Job posted successfully' });
@@ -675,6 +680,7 @@ app.post("/post-job", async (req, res) => {
     res.status(500).json({ message: 'Server Error' });
   }
 });
+
 
 //Updating existing posted job data for SA and HR
 app.post("/update-job", async (req, res) => {
@@ -814,7 +820,7 @@ app.get("/intern_data", async (req, res) => {
   }
 });
 
-//Student profile for SA
+//Student profile for SA && Intern Profile
 app.get("/intern_data/:id", async (req, res) => {
   const internID = req.params.id;
   try {
@@ -823,6 +829,53 @@ app.get("/intern_data/:id", async (req, res) => {
   } catch (err) {
     console.error("Database query error: ", err);
     res.status(500).json({ message: "Server error" });
+  }
+});
+
+
+app.put('/intern_data/:candidateID', async (req, res) => {
+  const { candidateID } = req.params;
+  const { fullName, email, mobileNo, altMobileNo, domain, belongedToVasaviFoundation, address, batchNo, modeOfInternship } = req.body;
+
+  try {
+    // Check if the provided data already exists for a different candidateID
+    const checkQuery = `
+      SELECT * FROM intern_data 
+      WHERE (email = '${email}' OR mobileNo = '${mobileNo}') AND candidateID != '${candidateID}';
+    `;
+    console.log("checkQuery :", checkQuery);
+    const existingRows = await query(checkQuery);
+    console.log(existingRows);
+    if (existingRows.length > 0) {
+      return res.status(401).json({
+        message: 'Data already exists',
+        suggestion: 'Please use a different email address or mobile number, or contact admin if you believe this is an error.'
+      });
+    }
+
+    // If no duplicates are found, proceed with the update
+    const updateQuery = `
+      UPDATE intern_data
+      SET
+        fullName = ?,
+        email = ?,
+        mobileNo = ?,
+        altMobileNo = ?,
+        domain = ?,
+        belongedToVasaviFoundation = ?,
+        address = ?,
+        batchNo = ?,
+        modeOfInternship = ?
+      WHERE candidateID = ?;
+    `;
+
+    await query(updateQuery, [fullName, email, mobileNo, altMobileNo, domain, belongedToVasaviFoundation, address, batchNo, modeOfInternship, candidateID]);
+
+    return res.status(200).json({ message: 'Profile updated successfully' });
+
+  } catch (error) {
+    console.error('Error updating profile:', error);
+    return res.status(500).json({ message: 'Internal Server Error' });
   }
 });
 
@@ -1005,12 +1058,10 @@ app.get("/view-jobs/:jobId", async (req, res) => {
 
 //APPLICANT HISTORY for SA and HR
 app.get("/applicant-history/", async (req, res) => {
-  const { candidateID = '', fullName = '', email = "", mobileNumber = "" } = req.query;
-  console.log(candidateID, email,  mobileNumber)
+  const { candidateID = '', name = '', email = "", mobileNumber = "" } = req.query;
+  console.log(candidateID, email, name, mobileNumber)
   try {
-    
-    const result = await query(`SELECT * FROM intern_data WHERE candidateID='${candidateID}' OR fullName='${fullName}' OR email='${email}' OR mobileNo='${mobileNumber}'`)
-    
+    const result = await query(`SELECT * FROM intern_data WHERE candidateID='${candidateID}' OR fullName='${name}' OR email='${email}' OR mobileNo='${mobileNumber}'`)
     if (result) {
       res.status(200).json(result[0])
     }
@@ -1189,6 +1240,25 @@ app.get('/hr-company-history/', async (req, res) => {
   }
 });
 
+//APi to check jobs posted by a particular Hr from a company
+app.get('/SA-company-history/', async (req, res) => {
+  const { companyID } = req.query
+  console.log("Searching company details")
+
+  const sql_q = `SELECT * FROM jobs WHERE companyID='${companyID}'`;
+  console.log(sql_q)
+  try {
+    const rows = await query(sql_q);
+    console.log(rows)
+    // Encode binary data to base64
+
+    //console.log(response)
+    res.status(200).json(rows); // Send back the modified rows
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ message: 'Server Error' });
+  }
+});
 //SELECT JOBS FROM PARTICULAR Company for SA and Hr
 app.get('/company-history/:companyID', async (req, res) => {
   const { companyID } = req.params
@@ -1422,7 +1492,6 @@ app.post("/accept-interns", async (req, res) => {
   const rejectedInterns = [];
 
   try {
-    // Query existing interns by email or mobile number
     const existingInterns = await query(
       'SELECT email, mobileNo FROM intern_data WHERE email IN (?) OR mobileNo IN (?)',
       [
@@ -2437,10 +2506,8 @@ app.get("/view-jobs-status", async (req, res) => {
     }
     const rows = await query(sql);
 
-    // Encode binary data to base64
-
     console.log(rows)
-    res.status(200).json(rows); // Send back the modified rows
+    res.status(200).json(rows);
   } catch (err) {
     console.error(err);
     res.status(500).json({ message: 'Server Error' });
