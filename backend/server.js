@@ -638,7 +638,7 @@ app.post('/SAlogin', [
 
 
 app.post("/post-job", async (req, res) => {
-  const { job, hrId, companyId } = req.body;
+  const { job, hrId,companyId } = req.body;
   console.log(req.body);
   try {
     // Convert lastDate to the proper format (YYYY-MM-DD)
@@ -646,7 +646,7 @@ app.post("/post-job", async (req, res) => {
 
     // Check for duplicate job entries
     const rows = await query(`
-  SELECT * FROM jobs WHERE companyName = ? AND Location = ? AND jobCategory = ? AND jobExperience = ? AND jobQualification = ? AND email = ? AND phone = ? AND lastDate = ? AND jobDescription = ? AND salary = ? AND applicationUrl = ? AND requiredSkills = ? AND jobType = ? AND jobTitle = ? AND postedBy = ?`,
+      SELECT * FROM jobs WHERE companyName = ? AND Location = ? AND jobCategory = ? AND jobExperience = ? AND jobQualification = ? AND email = ? AND phone = ? AND lastDate = ? AND jobDescription = ? AND salary = ? AND applicationUrl = ? AND requiredSkills = ? AND jobType = ? AND jobTitle = ? AND postedBy = ?`, 
       [
         job.companyName, job.jobCity, job.jobCategory,
         job.jobExperience, job.jobQualification, job.email, job.phone, lastDate,
@@ -660,13 +660,13 @@ app.post("/post-job", async (req, res) => {
 
     // Insert the job into the database
     await query(`
-  INSERT INTO jobs (companyName, Location, jobCategory, jobExperience, jobQualification, email, phone, postedOn, lastDate, jobDescription, salary, applicationUrl, requiredSkills, jobType, jobTitle, postedBy,status,companyID)
-  VALUES (?, ?, ?, ?, ?, ?, ?, NOW(), ?, ?, ?, ?, ?, ?, ?, ?,'jd-received',?)`,
+      INSERT INTO jobs (companyName, Location, jobCategory, jobExperience, jobQualification, email, phone, postedOn, lastDate, jobDescription, salary, applicationUrl, requiredSkills, jobType, jobTitle, postedBy,status,companyID,openings,bond) 
+      VALUES (?, ?, ?, ?, ?, ?, ?, NOW(), ?, ?, ?, ?, ?, ?, ?, ?,'jd-received',?,?,?)`, 
       [
         job.companyName, job.jobCity, job.jobCategory,
         job.jobExperience, job.jobQualification, job.email, job.phone, lastDate,
         job.jobDescription, job.salary, job.applicationUrl,
-        job.requiredSkills, job.jobType, job.jobTitle, hrId, companyId
+        job.requiredSkills, job.jobType, job.jobTitle, hrId,companyId,job.openings,job.bond
       ]);
 
     res.status(201).json({ message: 'Job posted successfully' });
@@ -675,7 +675,6 @@ app.post("/post-job", async (req, res) => {
     res.status(500).json({ message: 'Server Error' });
   }
 });
-
 
 //Updating existing posted job data for SA and HR
 app.post("/update-job", async (req, res) => {
