@@ -1058,10 +1058,12 @@ app.get("/view-jobs/:jobId", async (req, res) => {
 
 //APPLICANT HISTORY for SA and HR
 app.get("/applicant-history/", async (req, res) => {
-  const { candidateID = '', name = '', email = "", mobileNumber = "" } = req.query;
-  console.log(candidateID, email, name, mobileNumber)
+  const { candidateID = '', fullName = '', email = "", mobileNumber = "" } = req.query;
+  console.log(candidateID, email,  mobileNumber)
   try {
-    const result = await query(`SELECT * FROM intern_data WHERE candidateID='${candidateID}' OR fullName='${name}' OR email='${email}' OR mobileNo='${mobileNumber}'`)
+    
+    const result = await query(`SELECT * FROM intern_data WHERE candidateID='${candidateID}' OR fullName='${fullName}' OR email='${email}' OR mobileNo='${mobileNumber}'`)
+    console.log("Res",result)
     if (result) {
       res.status(200).json(result[0])
     }
