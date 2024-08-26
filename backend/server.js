@@ -812,7 +812,7 @@ app.post("/intern_login", [
 //Students list in SA 
 app.get("/intern_data", async (req, res) => {
   try {
-    const rows = await query('SELECT * FROM intern_data');
+    const rows = await query('SELECT * FROM intern_data ORDER BY candidateID DESC');
     res.status(200).json(rows);
   } catch (err) {
     console.error("Database query error: ", err);
@@ -918,7 +918,7 @@ app.get("/SA_details/:id", async (req, res) => {
 // HR Data for Super Admin Dashboard
 app.get('/hr_data', async (req, res) => {
   try {
-    const rows = await query('SELECT * FROM hr_data');
+    const rows = await query('SELECT * FROM hr_data ORDER BY HRid DESC');
     res.status(200).json(rows);
   } catch (err) {
     console.error('Database query error:', err);
