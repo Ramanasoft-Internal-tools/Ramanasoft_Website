@@ -1679,7 +1679,6 @@ app.get('/user-quizzes/:userId', (req, res) => {
       return;
     }
 
-    // Extract quiz IDs from results
     const quizIds = quizIdResults.map(row => row.quiz_id);
     const statuses = quizIdResults.reduce((acc, row) => {
       acc[row.quiz_id] = row.status;
@@ -1702,7 +1701,6 @@ app.get('/user-quizzes/:userId', (req, res) => {
         return;
       }
 
-      // Add the status to each quiz object
       const quizzesWithStatus = quizzesResults.map(quiz => ({
         ...quiz,
         status: statuses[quiz.token] || null // Use the status from the earlier query
@@ -1809,13 +1807,52 @@ app.put('/update-user-quiz-status/:userId/:quizId', (req, res) => {
 
 app.get('/quiz-responses/:token', async (req, res) => {
   const { token } = req.params;
-  await query(`SELECT q.pages_data, r.id AS response_id, r.token, r.responses, r.start_time, r.end_time, r.duration, i.fullName AS user_name, i.email AS user_email, i.mobileNo, i.altMobileNo, i.domain, res.score, res.grade FROM responses r JOIN intern_data i ON r.user_id = i.candidateID LEFT JOIN (SELECT quiz_token, user_id, score, grade, percentage FROM results WHERE (quiz_token, user_id, id) IN (SELECT quiz_token, user_id, MAX(id) FROM results GROUP BY quiz_token, user_id)) res ON r.token = res.quiz_token AND i.candidateID = res.user_id JOIN quiz q ON r.token = q.token JOIN user_quizzes uq ON uq.quiz_id = q.id AND uq.internID = r.user_id WHERE r.token = ? AND uq.status = 1`, [token], (err, results) => {
+  console.log("Token :", token);
+  const sql = `SELECT q.pages_data,
+       r.id AS response_id,
+       r.token,
+       r.user_id,
+       r.responses,
+       r.start_time,
+       r.end_time,
+       r.duration,
+       i.fullName AS user_name,
+       i.email AS user_email,
+       i.mobileNo,
+       i.domain,
+       res.score,
+       res.grade
+FROM responses r
+JOIN intern_data i ON r.user_id = i.candidateID
+LEFT JOIN (
+    SELECT quiz_token,
+           user_id,
+           score,
+           grade,
+           percentage
+    FROM results
+    WHERE (quiz_token, user_id, id) IN (
+        SELECT quiz_token,
+               user_id,
+               MAX(id)
+        FROM results
+        GROUP BY quiz_token,
+                 user_id
+    )
+) res ON r.token = res.quiz_token AND i.candidateID = res.user_id
+JOIN quiz q ON r.token = q.token
+JOIN user_quizzes uq ON uq.quiz_id = q.token AND uq.internID = r.user_id
+WHERE r.token = ?
+`
+  query(sql, [token], (err, results) => {
     if (err) {
+      console.log(err);
       console.error('Error fetching quiz responses:', err);
       return res.status(500).json({ error: 'Internal server error' });
     }
 
     if (results.length === 0) {
+      console.log("No responses found for this quiz");
       return res.status(404).json({ error: 'No responses found for this quiz' });
     }
 
@@ -1840,6 +1877,7 @@ app.get('/quiz-responses/:token', async (req, res) => {
       responses: JSON.parse(row.responses)
     }));
 
+    console.log("formattedResults",formattedResults);
     res.json({
       token: token,
       responses: formattedResults,
@@ -2184,6 +2222,7 @@ app.post('/quiz-options', async (req, res) => {
     showAnswersAfterSubmission,
   } = req.body;
 
+  console.log(req.body);
   try {
     const tokenExists = await validateToken(token);
 
