@@ -2,17 +2,12 @@ const express = require('express');
 const bodyParser = require('body-parser');
 const cors = require('cors');
 const env = require('dotenv');
-const axios = require('axios');
-const cron = require("node-cron");
-const crypto = require('crypto');
 const multer = require('multer');
 const util = require('util');
 
-const socketIo = require('socket.io');
 const nodemailer = require('nodemailer');
 const pool = require('./db');
 const { check, validationResult } = require('express-validator');
-const { compareSync } = require('bcrypt');
 const app = express();
 
 env.config();
@@ -188,6 +183,8 @@ app.get('/statistics/:status', async (req, res) => {
     res.status(500).json({ message: 'Server Error' });
   }
 })
+
+
 /*
 //Job descriptions and job applications for superadmin 
 app.get('/applications/:jobId', async (req, res) => {
@@ -205,15 +202,16 @@ app.get('/applications/:jobId', async (req, res) => {
     res.status(500).json({ message: 'Server Error' });
   }
 });*/
+ 
 
 app.get('/applications/:jobId', async (req, res) => {
   const { jobId } = req.params;
   const sql = `SELECT * FROM applied_students where jobId='${jobId}'`;
   //console.log("got  here")
+  console.log(sql);
   try {
     const rows = await query(sql);
-
-    // Encode binary data to base64
+    console.log(rows);
     const response = rows.map(row => ({
       ...row,
       resume: row.resume ? row.resume.toString('base64') : null
@@ -487,7 +485,8 @@ app.post("/accept-hrs", async (req, res) => {
       } else {
         lastHRIdNumber++;
         const newHRId = `RSHR-${String(lastHRIdNumber).padStart(2, '0')}`;
-        await query('INSERT INTO hr_data (HRid, fullName, email, mobileNo, dob, address, workEmail, workMobile, emergencyContactName, emergencyContactAddress, emergencyContactMobile, gender, branch, password) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,"password123")', [
+        const password = "password123";
+        await query('INSERT INTO hr_data (HRid, fullName, email, mobileNo, dob, address, workEmail, workMobile, emergencyContactName, emergencyContactAddress, emergencyContactMobile, gender, branch, password) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)', [
           newHRId,
           hr.fullName,
           hr.email,
@@ -500,18 +499,19 @@ app.post("/accept-hrs", async (req, res) => {
           hr.emergencyContactAddress,
           hr.emergencyContactMobile,
           hr.gender,
-          hr.branch
+          hr.branch,
+          password
         ]);
         acceptedHRs.push({ ...hr, HRid: newHRId });
       }
     }
-    const processedHRs = [...acceptedHRs, ...rejectedHRs];
+    const processedHRs = [...acceptedHRs];
     if (processedHRs.length > 0) {
       await query('DELETE FROM hr_requests WHERE email IN (?)', [
         processedHRs.map(hr => hr.email),
       ]);
     }
-    // Send confirmation email to accepted interns
+
     const mailOptions = {
       subject: 'Registration Success',
       text: `Your request is approved`,
@@ -1355,7 +1355,7 @@ app.post("/update-job", async (req, res) => {
 //API to get staticstics of jobs 
 app.get('/job-statistics/:status', async (req, res) => {
   const { status } = req.params
-  console.log("API called")
+  console.log("status :", status);
   try {
     let result;
     if (status === 'hr-leads') {
@@ -2424,7 +2424,6 @@ app.get('/intern-job-applicant-history/', async (req, res) => {
 //API for hr dashboard statistics
 app.get('/hr-job-applicants/', async (req, res) => {
   const { status, hrId } = req.query
-  //console.log("got  here")
   const sql = `SELECT applied_students.*,
       J.JobId,
       J.postedBy,
@@ -2547,22 +2546,3 @@ app.post("/add-hr",async(req,res)=>{
    
 })
 
-/*
-  app.get("/view-jobs-status", async (req, res) => {
-    const {status} = req.query
-
-    try {
-      const rows = await query(`SELECT * FROM jobs WHERE status='${status}'`);
-  
-      // Encode binary data to base64
-      const response = rows.map(row => ({
-        ...row,
-        resume: row.resume ? row.resume.toString('base64') : null
-      }));
-      console.log(response)
-      res.status(200).json(response); // Send back the modified rows
-    } catch (err) {
-      console.error(err);
-      res.status(500).json({ message: 'Server Error' });
-    }
-  });*/
