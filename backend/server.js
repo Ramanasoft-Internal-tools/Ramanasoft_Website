@@ -18,6 +18,12 @@ const path = require('path');
 const fs = require('fs');
 const mime = require('mime');
 
+// Allow all domains to access your API (you can restrict this to specific origins if needed)
+app.use(cors({
+    origin: 'https://pvpk06.github.io',  // Restrict access to your frontend
+    methods: ['GET', 'POST', 'PUT', 'DELETE'],
+    allowedHeaders: ['Content-Type', 'Authorization']
+}));
 
 const PORT = process.env.PORT ||  5000;
 
@@ -25,6 +31,8 @@ const uploadsDir = path.join(__dirname, 'uploads');
 if (!fs.existsSync(uploadsDir)){
     fs.mkdirSync(uploadsDir);
 }
+
+const upload = multer({ storage: multer.memoryStorage() });
 
 const storage = multer.diskStorage({
     destination: function (req, file, cb) {
@@ -35,7 +43,7 @@ const storage = multer.diskStorage({
     }
 });
 
-const upload = multer({ storage: storage });
+// const upload = multer({ storage: storage });
 app.use('/uploads', express.static('uploads'));
 
 app.use(bodyParser.json());
