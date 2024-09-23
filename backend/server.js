@@ -4,31 +4,63 @@ const cors = require('cors');
 const env = require('dotenv');
 const multer = require('multer');
 const util = require('util');
+const session = require('express-session');
 
 const nodemailer = require('nodemailer');
 const pool = require('./db');
 const { check, validationResult } = require('express-validator');
 const app = express();
+const crypto = require('crypto');
+const secret = crypto.randomBytes(64).toString('hex');
+
+app.use(session({
+  secret: 'your-secret-key',
+  resave: false,
+  saveUninitialized: true,
+  cookie: { secure: false, maxAge: 24 * 60 * 60 * 1000 } // 1 day
+}));
+
 
 env.config();
-const PORT = process.env.PORT || 5000;
-const upload = multer({ storage: multer.memoryStorage() });
+const path = require('path');
+const fs = require('fs');
+const mime = require('mime');
+
+
+const PORT = process.env.PORT ||  5000;
+// Ensure uploads directory exists
+const uploadsDir = path.join(__dirname, 'uploads');
+if (!fs.existsSync(uploadsDir)){
+    fs.mkdirSync(uploadsDir);
+}
+
+const storage = multer.diskStorage({
+    destination: function (req, file, cb) {
+        cb(null, uploadsDir);
+    },
+    filename: function (req, file, cb) {
+        cb(null, file.originalname);
+    }
+});
+
+const upload = multer({ storage: storage });
+app.use('/uploads', express.static('uploads'));
+
 app.use(bodyParser.json());
+app.use(express.urlencoded({ extended: true }));
 app.use(cors());
+
 var server = app.listen(PORT, () => {
   console.log(`Server is running on port ${PORT}`);
 });
+
+
 var io = require('socket.io')(server, { cors: { origin: '*' } });
+
 const query = util.promisify(pool.query).bind(pool);
-/*
-const query = (sql, values) => {
-  return new Promise((resolve, reject) => {
-    pool.query(sql, values, (error, results) => {
-      if (error) return reject(error);
-      resolve(results);
-    });
-  });
-};*/
+
+
+
 
 const sendEmail = async (email, mailOptions) => {
   const transport = nodemailer.createTransport({
@@ -36,7 +68,7 @@ const sendEmail = async (email, mailOptions) => {
     port: 587,
     auth: {
       user: "emailapikey",
-      pass: "PHtE6r0KFrvujWMnoBQI4fCwFMPyNIgv9LxjKlMVttxGW/BSGk0EqtwolWOzohcrVfBGE/Oayt9ot+jP4LiMc2bvMz1NW2qyqK3sx/VYSPOZsbq6x00Zsl4ddETZXYDmdtJp0C3fvtjaNA=="
+      pass: "PHtE6r0LF+C+jjUu9BEBtPe6RcKjZIIn+u5leVQVs45HC6QCHE1SqNh5kj61ohd7U/BCFfaeyIhrtezPs7iEdGa7YzoZWmqyqK3sx/VYSPOZsbq6x00VtlkecELZU4PncdZv0yPRu93eNA=="
     }
   });
 
@@ -59,7 +91,7 @@ const sendEmail = async (email, mailOptions) => {
 
 //HR api to get jobs in a company posted by same HR
 
-app.get('/hr-job-applications', async (req, res) => {
+app.get('/api/hr-job-applications', async (req, res) => {
   const { companyName, hrId } = req.query;
   console.log("Company name", companyName, hrId)
   let sql;
@@ -73,9 +105,6 @@ app.get('/hr-job-applications', async (req, res) => {
     J.JobId,
     J.postedBy FROM applied_students JOIN jobs AS J ON applied_students.JobID = J.JobId where applied_students.companyName='${companyName}' and J.postedBy='${hrId}'`;
   }
-  //console.log("got  here")
-
-  console.log(sql)
   try {
     const rows = await query(sql);
 
@@ -92,7 +121,7 @@ app.get('/hr-job-applications', async (req, res) => {
   }
 });
 
-app.put("/applications/:id/status", async (req, res) => {
+app.put("/api/applications/:id/status", async (req, res) => {
   const { status } = req.body
   const { id } = req.params
   console.log(status, id)
@@ -107,12 +136,11 @@ app.put("/applications/:id/status", async (req, res) => {
 })
 
 //Intern job apply api
-app.post('/apply-job', upload.single('resume'), async (req, res) => {
+app.post('/api/apply-job', upload.single('resume'), async (req, res) => {
   
   const { fullName, jobId, candidateId, jobRole, email, companyName, technology, mobileNumber, gender, yearOfPassedOut, experience } = req.body;
   const resume = req.file ? req.file.buffer : null;
   const status = "applied";
-
   try {
     const existingApplication = await query(
       'SELECT * FROM applied_students WHERE jobID = ? AND candidateID = ?',
@@ -134,9 +162,36 @@ app.post('/apply-job', upload.single('resume'), async (req, res) => {
 });
 
 
+//Intern job apply api
+app.post('/api/guest-apply-job', upload.single('resume'), async (req, res) => {
+  console.log(req.body);
+  const { fullName, jobId, guestID, jobRole, email, companyName, technology, mobileNumber, gender, yearOfPassedOut, experience } = req.body;
+  const resume = req.file ? req.file.buffer : null;
+  const status = "applied";
+  try {
+    const existingApplication = await query(
+      'SELECT * FROM applied_students WHERE jobID = ? AND candidateID = ?',
+      [jobId, guestID]
+    );
+    if (existingApplication.length > 0) {
+      return res.status(409).json({ message: 'Application already submitted' });
+    }
+    await query(
+      'INSERT INTO applied_students (jobID, fullName, candidateID, jobRole, email, companyName, technology, mobileNo, gender, passedOut, experience, status, resume, applied_on) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())',
+      [jobId, fullName, guestID, jobRole , email, companyName, technology, mobileNumber, gender, yearOfPassedOut, experience, status, resume]
+    );
+    console.log("Applied successfully");
+    res.status(200).json({ message: 'Application submitted successfully' });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ message: 'Server Error' });
+  }
+});
+
+
 
 //Resume download
-app.get('/download-resume/:id', async (req, res) => {
+app.get('/api/download-resume/:id', async (req, res) => {
   const { id } = req.params;
   console.log(req.params)
   console.log(id)
@@ -163,7 +218,7 @@ app.get('/download-resume/:id', async (req, res) => {
 
 
 //statistics for super admin
-app.get('/statistics/:status', async (req, res) => {
+app.get('/api/statistics/:status', async (req, res) => {
   const { status } = req.params
   console.log(status);
   try {
@@ -204,14 +259,13 @@ app.get('/applications/:jobId', async (req, res) => {
 });*/
  
 
-app.get('/applications/:jobId', async (req, res) => {
+app.get('/api/applications/:jobId', async (req, res) => {
   const { jobId } = req.params;
   const sql = `SELECT * FROM applied_students where jobId='${jobId}'`;
-  //console.log("got  here")
   console.log(sql);
   try {
     const rows = await query(sql);
-    console.log(rows);
+
     const response = rows.map(row => ({
       ...row,
       resume: row.resume ? row.resume.toString('base64') : null
@@ -227,7 +281,7 @@ app.get('/applications/:jobId', async (req, res) => {
 
 //intern registration
 
-app.post('/register/intern', async (req, res) => {
+app.post('/api/register/intern', async (req, res) => {
   const { fullName, email, mobileno, altmobileno, address, batchno, modeOfInternship, belongedToVasaviFoundation, domain } = req.body;
 
   const emailGot = req.body.email;
@@ -275,7 +329,7 @@ app.post('/register/intern', async (req, res) => {
 });
 
 // HR registration
-app.post('/register/hr', async (req, res) => {
+app.post('/api/register/hr', async (req, res) => {
   const {
     fullName, email, contactNo, dob, address,
     workEmail, workMobile, emergencyContactName,
@@ -335,14 +389,79 @@ app.post('/register/hr', async (req, res) => {
 });
 
 
-app.post('/update-profile/:id', async (req, res) => {
+// Guest registration
+
+app.post('/api/register/guest', async (req, res) => {
+  const { fullName, email, mobileno, altmobileno, address, modeOfTraining, program, domain, batchno, megadriveStatus } = req.body;
+
+  try {
+    // Check if the email already exists in the guest_data table
+    const data1 = await query('SELECT email FROM guest_data WHERE email = ?', [email]);
+    if (data1.length > 0) {
+      return res.status(400).json({
+        message: 'Email already exists',
+        suggestion: 'Please use a different email address or contact admin if you believe this is an error.'
+      });
+    }
+    
+    // Check if the email is already in the guest_requests table
+    const data2 = await query('SELECT email FROM guest_requests WHERE email = ?', [email]);
+    if (data2.length > 0) {
+      return res.status(401).json({
+        message: 'Already registered, wait for approval',
+      });
+    } else {
+      // Insert the new request into the guest_requests table
+      const sql = 'INSERT INTO guest_requests (fullName, email, mobileno, altmobileno, address, batchno, modeOfTraining, program, domain, megadriveStatus) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)';
+
+      try {
+        await query(sql, [fullName, email, mobileno, altmobileno, address, batchno, modeOfTraining, program, domain, megadriveStatus]);
+
+        // Prepare email options
+        const mailOptions = {
+          subject: 'Registration Success',
+          html: `<p style="font-family: Arial, sans-serif; color: #333333;">
+                    Successfully registered at <strong>RamanaSoft IT Services</strong>.</p> <br> 
+                    <p>Below are the details we got from you:</p> <br> 
+                    <strong>Full Name:</strong> ${fullName} <br> 
+                    <strong>Email:</strong> ${email} <br> 
+                    <strong>Mobile:</strong> ${mobileno} <br> 
+                    <strong>Domain:</strong> ${domain} <br> 
+                    <strong>Batch:</strong> ${batchno} <br> 
+                    <strong>Program:</strong> ${program} <br>
+                    <strong>Mode of Training:</strong> ${modeOfTraining} <br>
+                    <strong>Megadrive Status:</strong> ${megadriveStatus} <br>                 
+                    Registration request sent to Admin. <br> 
+                    Waiting for approval. An email will be sent to the registered email once approved.`,
+        };
+
+        // Send registration success email
+        await sendEmail(email, mailOptions);
+
+        console.log("Registered successfully");
+        return res.status(200).json({ message: 'Candidate registered successfully' });
+      } catch (err) {
+        console.error('Error executing query:', err);
+        console.log("Failed to register candidate");
+        return res.status(500).json({ message: 'Failed to register candidate' });
+      }
+    }
+  } catch (err) {
+    console.error('Error during registration:', err);
+    return res.status(500).json({ message: 'Server error' });
+  }
+});
+
+
+
+app.post('/api/update-profile/:id', async (req, res) => {
   const internID = req.params.id;
 
 
 })
 
 //Superadmin api to add hr
-app.post('/add/hr', async (req, res) => {
+app.post('/api/add/hr', async (req, res) => {
   const {
     fullName, email, contactNo, dob, address,
     workEmail, workMobile, emergencyContactName,
@@ -387,7 +506,7 @@ app.post('/add/hr', async (req, res) => {
 });
 
 //SA api for hr requests
-app.get("/hr-requests", async (req, res) => {
+app.get("/api/hr-requests", async (req, res) => {
   try {
     const hr = await query('SELECT * FROM hr_requests');
     res.status(200).json(hr);
@@ -397,7 +516,7 @@ app.get("/hr-requests", async (req, res) => {
 });
 
 //HR panel statistics API
-app.get('/hr-statistics/', async (req, res) => {
+app.get('/api/hr-statistics/', async (req, res) => {
   const { status, hrId } = req.query
   console.log("Status", status, hrId)
   try {
@@ -422,7 +541,7 @@ WHERE J.postedBy = '${hrId}' AND applied_students.status = '${status}'`)
 })
 
 //HR panel statistics api for HR leads
-app.get('/hr-job-statistics/', async (req, res) => {
+app.get('/api/hr-job-statistics/', async (req, res) => {
   const { status, hrId } = req.query
   console.log("API called")
   try {
@@ -446,7 +565,7 @@ app.get('/hr-job-statistics/', async (req, res) => {
 })
 
 //Super admin  api to accept hr request
-app.post("/accept-hrs", async (req, res) => {
+app.post("/api/accept-hrs", async (req, res) => {
   const hrs = req.body;
   console.log('Received HRs:', hrs);
   if (!Array.isArray(hrs)) {
@@ -528,7 +647,7 @@ app.post("/accept-hrs", async (req, res) => {
 
 
 //HR login api
-app.post("/reject-hrs", async (req, res) => {
+app.post("/api/reject-hrs", async (req, res) => {
   const hrs = req.body;
   console.log('Received candidates:', hrs);
   const requestIDs = hrs.map(hr => hr.requestID).filter(id => id != null);
@@ -556,8 +675,56 @@ app.post("/reject-hrs", async (req, res) => {
 });
 
 
+// app.post('/api/hr-login', [
+//   check('email', 'Email is required').isEmail(),
+//   check('password', 'Password is required').not().isEmpty()
+// ], async (req, res) => {
+//   const { email, password } = req.body;
 
-app.post('/hr-login', [
+//   // Validate input
+//   const errors = validationResult(req);
+//   if (!errors.isEmpty()) {
+//     return res.status(400).json({ errors: errors.array() });
+//   }
+
+//   try {
+//     // Check if the email exists
+//     const emailExists = await query('SELECT * FROM hr_data WHERE email = ?', [email]);
+//     if (emailExists.length < 1) {
+//       return res.status(404).json({ message: 'User Not Found' });
+//     }
+
+//     // Check if the email and password match
+//     const row = await query('SELECT * FROM hr_data WHERE email = ? AND password = ?', [email, password]);
+//     if (row.length > 0) {
+//       const user = row[0];
+
+//       // Store HR details in the session
+//       req.session.user = {
+//         id: user.HRid,
+//         role: 'HR',
+//         verified: true
+//       };
+
+//       return res.status(200).json({
+//         message: 'Logged in successfully',
+//         user: {
+//           id: user.HRid,
+//           role: 'HR',
+//           name: user.fullName
+//         }
+//       });
+//     } else {
+//       return res.status(401).json({ message: 'Invalid credentials' });
+//     }
+//   } catch (err) {
+//     console.error('Server error:', err);
+//     return res.status(500).json({ message: 'Server error' });
+//   }
+// });
+
+
+app.post('/api/hr-login', [
   check('email', 'Email is required').isEmail(),
   check('password', 'Password is required').not().isEmpty()
 ], async (req, res) => {
@@ -580,7 +747,6 @@ app.post('/hr-login', [
 
     // Check if the email and password match
     const row = await query('SELECT * FROM hr_data WHERE email = ? AND password = ?', [email, password]);
-    console.log(row);
     if (row.length > 0) {
       const user = row[0];
       console.log(user.fullName, "Logged in successfully");
@@ -594,9 +760,8 @@ app.post('/hr-login', [
   }
 });
 
-
-//Super adming api to delete hr
-app.delete('/delete_hr/:id', async (req, res) => {
+//Super admin api to delete hr
+app.delete('/api/api/delete_hr/:id', async (req, res) => {
   const hrId = req.params.id;
 
   try {
@@ -614,7 +779,7 @@ app.delete('/delete_hr/:id', async (req, res) => {
 });
 
 // SuperAdmin Login
-app.post('/SAlogin', [
+app.post('/api/SAlogin', [
   check('username', 'Username is required').not().isEmpty(),
   check('password', 'Password is required').not().isEmpty()
 ], async (req, res) => {
@@ -644,7 +809,7 @@ app.post('/SAlogin', [
 
 
 
-app.post("/post-job", async (req, res) => {
+app.post("/api/post-job", async (req, res) => {
   const { job, hrId, companyId } = req.body;
   console.log(req.body);
   try {
@@ -667,13 +832,13 @@ app.post("/post-job", async (req, res) => {
 
     // Insert the job into the database
     await query(`
-  INSERT INTO jobs (companyName, Location, jobCategory, jobExperience, jobQualification, email, phone, postedOn, lastDate, jobDescription, salary, applicationUrl, requiredSkills, jobType, jobTitle, postedBy,status,companyID)
-  VALUES (?, ?, ?, ?, ?, ?, ?, NOW(), ?, ?, ?, ?, ?, ?, ?, ?,'jd-received',?)`,
+  INSERT INTO jobs (companyName, Location, jobCategory, jobExperience, jobQualification, email, phone, postedOn, lastDate, jobDescription, salary, applicationUrl, requiredSkills, jobType, jobTitle, postedBy,status,companyID, openings, bond)
+  VALUES (?, ?, ?, ?, ?, ?, ?, NOW(), ?, ?, ?, ?, ?, ?, ?, ?,'jd-received',?, ?, ?)`,
       [
         job.companyName, job.jobCity, job.jobCategory,
         job.jobExperience, job.jobQualification, job.email, job.phone, lastDate,
         job.jobDescription, job.salary, job.applicationUrl,
-        job.requiredSkills, job.jobType, job.jobTitle, hrId, companyId
+        job.requiredSkills, job.jobType, job.jobTitle, hrId, companyId, job.openings, job.bond
       ]);
 
     res.status(201).json({ message: 'Job posted successfully' });
@@ -683,9 +848,8 @@ app.post("/post-job", async (req, res) => {
   }
 });
 
-
 //Updating existing posted job data for SA and HR
-app.post("/update-job", async (req, res) => {
+app.post("/api/update-job", async (req, res) => {
   const { jobId, changedValues } = req.body;
   console.log(jobId);
   console.log(changedValues);
@@ -716,7 +880,7 @@ app.post("/update-job", async (req, res) => {
 
 
 //intern requests for both SA and HR
-app.get("/intern-requests", async (req, res) => {
+app.get("/api/intern-requests", async (req, res) => {
   try {
     const intern = await query('SELECT * FROM intern_requests');
     io.emit('internRequestsUpdate', intern);
@@ -724,11 +888,21 @@ app.get("/intern-requests", async (req, res) => {
   } catch (err) {
     res.status(500).json({ message: "Server error" });
   }
+});
 
+//intern requests for both SA and HR
+app.get("/api/guest-requests", async (req, res) => {
+  try {
+    const guest = await query('SELECT * FROM guest_requests');
+    io.emit('internRequestsUpdate', guest);
+    res.status(200).json(guest);
+  } catch (err) {
+    res.status(500).json({ message: "Server error" });
+  }
 });
 
 //View companies for both HR and SA
-app.get("/view-companies", async (req, res) => {
+app.get("/api/view-companies", async (req, res) => {
   try {
     const jobs = await query('SELECT * FROM companies');
     console.log("Jobs", jobs)
@@ -739,10 +913,14 @@ app.get("/view-companies", async (req, res) => {
 });
 
 //Super admin view jobs
-app.get("/view-jobs", async (req, res) => {
+app.get("/api/view-jobs", async (req, res) => {
   console.log("called")
   try {
-    const jobs = await query('SELECT * FROM jobs');
+    const jobs = await query(`
+      SELECT jobs.*, hr_data.fullName as name
+      FROM jobs 
+      INNER JOIN hr_data ON jobs.postedBy = hr_data.HRid
+    `);
     console.log(jobs)
     res.status(200).json(jobs);
   } catch (err) {
@@ -752,7 +930,7 @@ app.get("/view-jobs", async (req, res) => {
 });
 
 //View jobs for Intern
-app.get("/intern-view-jobs/:id", async (req, res) => {
+app.get("/api/intern-view-jobs/:id", async (req, res) => {
   const candidateId = req.params.id;
   try {
     const date = new Date();
@@ -770,11 +948,37 @@ app.get("/intern-view-jobs/:id", async (req, res) => {
 });
 
 
-//Api for view job applications for Interns
-app.get('/applied-jobs/:id', async (req, res) => {
+// //Api for view job applications for Interns
+// app.get('/api/applied-jobs/:id', async (req, res) => {
+//   try {
+//     const candidateID = req.params.id;
+//     const data = await query("SELECT * FROM applied_students WHERE candidateID = ?", [candidateID]);
+//     res.json(data);
+//   } catch (error) {
+//     console.error("Error fetching data:", error);
+//     res.status(500).json({ error: "Internal server error" });
+//   }
+// });
+
+app.get('/api/applied-jobs/:id', async (req, res) => {
   try {
     const candidateID = req.params.id;
-    const data = await query("SELECT * FROM applied_students WHERE candidateID = ?", [candidateID]);
+    const data = await query(`
+      SELECT 
+        applied_students.*, 
+        jobs.postedBy, 
+        hr_data.fullName AS hrName, 
+        hr_data.mobileNo AS hrContact 
+      FROM 
+        applied_students 
+      INNER JOIN 
+        jobs ON applied_students.jobId = jobs.jobId 
+      INNER JOIN 
+        hr_data ON jobs.postedBy = hr_data.HRid 
+      WHERE 
+        applied_students.candidateID = ?`, 
+      [candidateID]
+    );
     res.json(data);
   } catch (error) {
     console.error("Error fetching data:", error);
@@ -782,8 +986,39 @@ app.get('/applied-jobs/:id', async (req, res) => {
   }
 });
 
+
+app.get('/api/guest-applied-jobs/:id', async (req, res) => {
+  try {
+    const guestID = req.params.id;
+    console.log(guestID);
+    const data = await query(`
+      SELECT 
+        applied_students.*, 
+        jobs.postedBy, 
+        hr_data.fullName AS hrName, 
+        hr_data.mobileNo AS hrContact 
+      FROM 
+        applied_students 
+      INNER JOIN 
+        jobs ON applied_students.jobId = jobs.jobId 
+      INNER JOIN 
+        hr_data ON jobs.postedBy = hr_data.HRid 
+      WHERE 
+        applied_students.candidateID = ?`, 
+      [guestID]
+    );
+    console.log(data); // Log the data to ensure it's correct
+    res.json(data);
+  } catch (error) {
+    console.error("Error fetching data:", error);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+
+
 //Intern login api
-app.post("/intern_login", [
+app.post("/api/intern_login", [
   check('mobileNo', 'Mobile number is required').not().isEmpty()
 ], async (req, res) => {
   const { mobileNo } = req.body;
@@ -812,9 +1047,40 @@ app.post("/intern_login", [
   }
 });
 
+//Guest login api
+app.post("/api/guest_login", [
+  check('mobileNo', 'Mobile number is required').not().isEmpty()
+], async (req, res) => {
+  const { mobileNo } = req.body;
+  console.log("Mobile No Got :", mobileNo);
+  const errors = validationResult(req);
+
+  if (!errors.isEmpty()) {
+    return res.status(400).json({ errors: errors.array() });
+  }
+
+  try {
+    // Check if the intern exists with the provided mobile number
+    const rows = await query('SELECT * FROM guest_data WHERE mobileNo = ?', [mobileNo]);
+    console.log(rows);
+    if (rows.length > 0) {
+      const guest = rows[0];
+      console.log(guest);
+      res.cookie('guestID', guest.guestID, { httpOnly: true, secure: true, maxAge: 30 * 24 * 60 * 60 * 1000 });
+      return res.status(200).json({ message: 'Please Login', guest }); // 200 for success
+    } else {
+      return res.status(404).json({ error: "Guest not found, please register" }); // Updated to 404 for "Intern not found"
+    }
+
+  } catch (err) {
+    console.error(err);
+    return res.status(500).json({ message: 'Server error' }); // 500 for "Server error"
+  }
+});
+
 
 //Students list in SA 
-app.get("/intern_data", async (req, res) => {
+app.get("/api/intern_data", async (req, res) => {
   try {
     const rows = await query('SELECT * FROM intern_data order by candidateID desc');
     res.status(200).json(rows);
@@ -824,9 +1090,21 @@ app.get("/intern_data", async (req, res) => {
   }
 });
 
+//Guests list in SA
+app.get("/api/guest_data", async (req, res) => {
+  try {
+    const rows = await query('SELECT * FROM guest_data order by guestID desc');
+    res.status(200).json(rows);
+  } catch (err) {
+    console.error("Database query error: ", err);
+    res.status(500).json({ message: "Server error" });
+  }
+});
+
 //Student profile for SA && Intern Profile
-app.get("/intern_data/:id", async (req, res) => {
+app.get("/api/intern_data/:id", async (req, res) => {
   const internID = req.params.id;
+
   try {
     const rows = await query('SELECT * FROM intern_data WHERE candidateID = ?', [internID]);
     res.status(200).json(rows);
@@ -836,8 +1114,50 @@ app.get("/intern_data/:id", async (req, res) => {
   }
 });
 
+//guests profile for SA && Intern Profile
+app.get("/api/guest_data/:id", async (req, res) => {
+  const internID = req.params.id;
 
-app.put('/intern_data/:candidateID', async (req, res) => {
+  try {
+    const rows = await query('SELECT * FROM guest_data WHERE guestID = ?', [internID]);
+    res.status(200).json(rows);
+  } catch (err) {
+    console.error("Database query error: ", err);
+    res.status(500).json({ message: "Server error" });
+  }
+});
+
+
+app.get("/api/profile_data/:id", async (req, res) => {
+  const internID = req.params.id;
+
+  try {
+    // Query intern_data first
+    const internData = await query('SELECT * FROM intern_data WHERE candidateID = ?', [internID]);
+
+    if (internData.length > 0) {
+      // If internData is found, return it
+      return res.status(200).json({ type: 'intern', data: internData[0] });
+    }
+
+    // If no intern data, query guest_data
+    const guestData = await query('SELECT * FROM guest_data WHERE guestID = ?', [internID]);
+
+    if (guestData.length > 0) {
+      // If guestData is found, return it
+      return res.status(200).json({ type: 'guest', data: guestData[0] });
+    }
+
+    // If neither intern nor guest data is found, send a 404
+    res.status(404).json({ message: 'No data found for the provided ID' });
+  } catch (err) {
+    console.error("Database query error: ", err);
+    res.status(500).json({ message: "Server error" });
+  }
+});
+
+
+app.put('/api/intern_data/:candidateID', async (req, res) => {
   const { candidateID } = req.params;
   const { fullName, email, mobileNo, altMobileNo, domain, belongedToVasaviFoundation, address, batchNo, modeOfInternship } = req.body;
 
@@ -884,7 +1204,7 @@ app.put('/intern_data/:candidateID', async (req, res) => {
 });
 
 // DELETE a student by candidateID
-app.delete("/intern_data/:id", async (req, res) => {
+app.delete("/api/intern_data/:id", async (req, res) => {
   const internID = req.params.id;
   try {
     const result = await query('DELETE FROM intern_data WHERE candidateID = ?', [internID]);
@@ -900,8 +1220,25 @@ app.delete("/intern_data/:id", async (req, res) => {
   }
 });
 
+// DELETE a guest by guestID
+app.delete("/api/guest_data/:id", async (req, res) => {
+  const guestID = req.params.id;
+  try {
+    const result = await query('DELETE FROM guest_data WHERE guestID = ?', [guestID]);
+
+    if (result.affectedRows > 0) {
+      res.status(200).json({ message: 'Student data deleted successfully.' });
+    } else {
+      res.status(404).json({ message: 'Student not found.' });
+    }
+  } catch (err) {
+    console.error("Database query error: ", err);
+    res.status(500).json({ message: "Server error" });
+  }
+});
+
 // SA_details for Super Admin Dashboard
-app.get("/SA_details/:id", async (req, res) => {
+app.get("/api/SA_details/:id", async (req, res) => {
   const SAid = req.params.id;
   console.log(SAid)
   try {
@@ -920,7 +1257,7 @@ app.get("/SA_details/:id", async (req, res) => {
 
 
 // HR Data for Super Admin Dashboard
-app.get('/hr_data', async (req, res) => {
+app.get('/api/hr_data', async (req, res) => {
   try {
     const rows = await query('SELECT * FROM hr_data ORDER BY HRid DESC');
     res.status(200).json(rows);
@@ -932,7 +1269,7 @@ app.get('/hr_data', async (req, res) => {
 
 
 // HR details by HRid for HR Dashboard
-app.get("/hr-profile/:hrID", async (req, res) => {
+app.get("/api/hr-profile/:hrID", async (req, res) => {
   const { hrID } = req.params
   try {
     console.log("fetching ", hrID, " Details")
@@ -945,7 +1282,7 @@ app.get("/hr-profile/:hrID", async (req, res) => {
 })
 
 // Update HR Profile from HR Dashboard
-app.put("/hr-profile/:hrID", async (req, res) => {
+app.put("/api/hr-profile/:hrID", async (req, res) => {
   const { hrID } = req.params;
   const {
     fullName, email, mobileNo, dob, address, workEmail, workMobile,
@@ -980,7 +1317,7 @@ app.put("/hr-profile/:hrID", async (req, res) => {
 });
 
 //Fetch hr data in SA panel
-app.get('/hr_data/:id', async (req, res) => {
+app.get('/api/hr_data/:id', async (req, res) => {
   const { id } = req.params;
   try {
     const rows = await query('SELECT * FROM hr_data WHERE HRid = ?', [id]);
@@ -996,7 +1333,7 @@ app.get('/hr_data/:id', async (req, res) => {
 });
 
 // Update HR data 
-app.put('/hr_data/:id', async (req, res) => {
+app.put('/api/hr_data/:id', async (req, res) => {
   const { id } = req.params;
   const updatedHr = req.body;
   try {
@@ -1015,7 +1352,7 @@ app.put('/hr_data/:id', async (req, res) => {
 });
 
 // Delete HR data
-app.delete('/hr_data/:id', async (req, res) => {
+app.delete('/api/hr_data/:id', async (req, res) => {
   const { id } = req.params;
 
   try {
@@ -1033,7 +1370,7 @@ app.delete('/hr_data/:id', async (req, res) => {
 });
 
 // jobs details
-app.get('/hr_jobs/:HRid', async (req, res) => {
+app.get('/api/hr_jobs/:HRid', async (req, res) => {
   const { HRid } = req.params;
   try {
     const rows = await query('SELECT * FROM jobs WHERE postedBy = ?', HRid);
@@ -1048,12 +1385,17 @@ app.get('/hr_jobs/:HRid', async (req, res) => {
 
 
 //View jobs by jobId for SA and HR
-app.get("/view-jobs/:jobId", async (req, res) => {
+app.get("/api/view-jobs/:jobId", async (req, res) => {
   const { jobId } = req.params
   console.log(jobId)
   try {
-    const jobs = await query(`SELECT * FROM jobs where jobId=${jobId}`);
-    console.log(jobs)
+    const jobs = await query(`
+      SELECT jobs.*, hr_data.fullName AS name, hr_data.mobileNo as contact
+      FROM jobs 
+      INNER JOIN hr_data ON jobs.postedBy = hr_data.HRid
+      WHERE jobs.jobId = ${jobId}
+    `);
+        console.log(jobs)
     res.status(200).json(jobs[0]);
   } catch (err) {
     res.status(500).json({ message: "Server error" });
@@ -1061,7 +1403,7 @@ app.get("/view-jobs/:jobId", async (req, res) => {
 });
 
 //APPLICANT HISTORY for SA and HR
-app.get("/applicant-history/", async (req, res) => {
+app.get("/api/applicant-history/", async (req, res) => {
   const { candidateID = '', name = '', email = "", mobileNumber = "" } = req.query;
   console.log(candidateID, email, name, mobileNumber)
   try {
@@ -1076,12 +1418,9 @@ app.get("/applicant-history/", async (req, res) => {
     console.error(err);
     res.status(500).json({ message: "Server Error" });
   }
-
-
-
 })
 //COMPANIES LIST WHICH ARE REGISTERED
-app.get("/registered-companies", async (req, res) => {
+app.get("/api/registered-companies", async (req, res) => {
   console.log("companies")
   try {
     const result = await query('SELECT * FROM companies')
@@ -1094,7 +1433,7 @@ app.get("/registered-companies", async (req, res) => {
 })
 
 //UPDATE JOB STATUS for SA and HR
-app.put("/jobs/status", async (req, res) => {
+app.put("/api/jobs/status", async (req, res) => {
   const { status, ids } = req.body;
   console.log(status, ids);
 
@@ -1119,7 +1458,7 @@ app.put("/jobs/status", async (req, res) => {
 });
 
 //UPDATE STATUS OF AN APPLICATION STATUS
-app.put("/applications/status", async (req, res) => {
+app.put("/api/applications/status", async (req, res) => {
   const { status, ids } = req.body;
   console.log(status, ids);
 
@@ -1145,7 +1484,7 @@ app.put("/applications/status", async (req, res) => {
 
 //GETTING APPLICANT DETAILS FOR PARTICULAR JOBID
 
-app.get('/applications', async (req, res) => {
+app.get('/api/applications', async (req, res) => {
   const { companyName } = req.query;
   let sql = 'SELECT * FROM applied_students';
   const params = [];
@@ -1172,7 +1511,7 @@ app.get('/applications', async (req, res) => {
 
 
 //APPLICANT HISTORY USING CANIDATE ID
-app.get('/applicant-history/:candidateId', async (req, res) => {
+app.get('/api/applicant-history/:candidateId', async (req, res) => {
   const { candidateId } = req.params
   const sql_q = `SELECT * FROM applied_students WHERE candidateID='${candidateId}'`;
   console.log(sql_q)
@@ -1194,7 +1533,7 @@ app.get('/applicant-history/:candidateId', async (req, res) => {
 
 //COMPANY HISTORY USING COMPANY ID for SA and Hr
 
-app.get("/company-history/", async (req, res) => {
+app.get("/api/company-history/", async (req, res) => {
   const { companyID = '', name = '', email = "", mobileNumber = "" } = req.query;
   //console.log(candidateID,email,name,mobileNumber)
   console.log(companyID)
@@ -1216,7 +1555,7 @@ app.get("/company-history/", async (req, res) => {
 })
 
 //APi to check jobs posted by a particular Hr from a company
-app.get('/hr-company-history/', async (req, res) => {
+app.get('/api/hr-company-history/', async (req, res) => {
   const { companyID, hrId } = req.query
   console.log("Searching company details")
 
@@ -1236,7 +1575,7 @@ app.get('/hr-company-history/', async (req, res) => {
 });
 
 //APi to check jobs posted by a particular Hr from a company
-app.get('/SA-company-history/', async (req, res) => {
+app.get('/api/SA-company-history/', async (req, res) => {
   const { companyID } = req.query
   console.log("Searching company details")
 
@@ -1255,7 +1594,7 @@ app.get('/SA-company-history/', async (req, res) => {
   }
 });
 //SELECT JOBS FROM PARTICULAR Company for SA and Hr
-app.get('/company-history/:companyID', async (req, res) => {
+app.get('/api/company-history/:companyID', async (req, res) => {
   const { companyID } = req.params
   console.log("Searching company details")
 
@@ -1276,7 +1615,7 @@ app.get('/company-history/:companyID', async (req, res) => {
 
 //STATISTICS FOR APPLIED STUDENTS COUNT ON  SUPERADMIN DASHBOARD
 
-app.get('/statistics/:status', async (req, res) => {
+app.get('/api/statistics/:status', async (req, res) => {
   const { status } = req.params
   try {
     let result;
@@ -1297,7 +1636,7 @@ app.get('/statistics/:status', async (req, res) => {
 })
 
 //API TO FILTER JOB APPLICANTS USING THE APPLICATION STATUS 
-app.get('/job-applicants/:status', async (req, res) => {
+app.get('/api/job-applicants/:status', async (req, res) => {
   const { status } = req.params;
   console.log("Got here, status:", status);
 
@@ -1325,7 +1664,7 @@ app.get('/job-applicants/:status', async (req, res) => {
 
 
 //API TO UPDATE JOBS
-app.post("/update-job", async (req, res) => {
+app.post("/api/update-job", async (req, res) => {
   const { jobId, changedValues } = req.body;
   console.log("req:", req.body);
 
@@ -1353,7 +1692,7 @@ app.post("/update-job", async (req, res) => {
 });
 
 //API to get staticstics of jobs 
-app.get('/job-statistics/:status', async (req, res) => {
+app.get('/api/job-statistics/:status', async (req, res) => {
   const { status } = req.params
   console.log("status :", status);
   try {
@@ -1377,71 +1716,9 @@ app.get('/job-statistics/:status', async (req, res) => {
     res.status(500).json({ message: 'Server Error' });
   }
 })
-/*
-//API to accept interns
-app.post("/accept-interns", async (req, res) => {
-  const interns = req.body;
-  console.log("Interns",interns);
-  const acceptedInterns = [];
 
-  try {
-    const existingInterns = await query(
-      'SELECT email, mobileNo FROM interns WHERE email IN (?) OR mobileNo IN (?)',
-      [
-        interns.map(intern => intern.email),
-        interns.map(intern => intern.mobileNo)
-      ]
-    );
-    console.log(existingInterns);
-    const existingEmails = new Set(existingInterns.map(intern => intern.email));
-    const existingPhones = new Set(existingInterns.map(intern => intern.mobileNo));
-    for (const intern of interns) {
-      if (!existingEmails.has(intern.email) && !existingPhones.has(intern.mobileNo)) {
-        await query(
-          'INSERT INTO interns (fullName, email, mobileNo, altMobileNo, domain, belongedToVasaviFoundation, address, batchNo, modeOfInternship) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
-          [
-            intern.fullName,
-            intern.email,
-            intern.mobileNo,
-            intern.altMobileNo,
-            intern.domain,
-            intern.belongedToVasaviFoundation,
-            intern.address,
-            intern.batchNo,
-            intern.modeOfInternship
-          ]
-        );
-        acceptedInterns.push(intern);
-      }
-      else if (existingEmails.has(intern.email)) {
-        console.log(intern.email, "user Exists")
-      }
-    }
 
-    if (acceptedInterns.length > 0) {
-      await query(
-        'DELETE FROM intern_requests WHERE email IN (?) OR mobileNo IN (?)',
-        [
-          acceptedInterns.map(intern => intern.email),
-          acceptedInterns.map(intern => intern.mobileNo)
-        ]
-      );
-    }
-    const mailOptions = {
-      subject: 'Registration Success',
-      text: `Your request is approved`,
-    };
-    const emailPromises = acceptedInterns.map(intern => sendEmail(intern.email, mailOptions));
-    await Promise.all(emailPromises);
-
-    res.status(200).json({ accepted: acceptedInterns,rejected:rejected });
-  } catch (error) {
-    console.error('Error processing interns:', error);
-    res.status(500).json({ error: 'Internal Server Error' });
-  }
-});*/
-
-app.post("/accept-interns", async (req, res) => {
+app.post("/api/accept-interns", async (req, res) => {
   const interns = req.body;
   console.log("Interns:", interns);
 
@@ -1449,13 +1726,25 @@ app.post("/accept-interns", async (req, res) => {
   const rejectedInterns = [];
 
   try {
-    const existingInterns = await query(
-      'SELECT email, mobileNo FROM intern_data WHERE email IN (?) OR mobileNo IN (?)',
-      [
-        interns.map(intern => intern.email),
-        interns.map(intern => intern.mobileNo)
-      ]
-    );
+      // Extract emails and mobile numbers from the interns list
+    const emails = interns.map(intern => intern.email);
+    const mobileNos = interns.map(intern => intern.mobileNo);
+
+      existingInterns = await query(
+        `SELECT email, mobileNo 
+         FROM intern_data 
+         WHERE email IN (?) OR mobileNo IN (?)
+         UNION 
+         SELECT email, mobileno 
+         FROM intern_data 
+         WHERE email IN (?) OR mobileno IN (?)`,
+        [
+          emails.length > 0 ? emails : [null],
+          mobileNos.length > 0 ? mobileNos : [null],
+          emails.length > 0 ? emails : [null],
+          mobileNos.length > 0 ? mobileNos : [null]
+        ]
+      );
     console.log(existingInterns);
     const existingEmails = new Set(existingInterns.map(intern => intern.email));
     const existingPhones = new Set(existingInterns.map(intern => intern.mobileNo));
@@ -1520,8 +1809,104 @@ app.post("/accept-interns", async (req, res) => {
 });
 
 
+app.post("/api/accept-guests", async (req, res) => {
+  const guests = req.body;
+  console.log("Guests:", guests);
+
+  const acceptedGuests = [];
+  const rejectedGuests = [];
+
+  // Extract emails and mobile numbers
+  const emails = guests.map(guest => guest.email).filter(email => email);
+  const mobileNos = guests.map(guest => guest.mobileno).filter(mobile => mobile);
+
+  try {
+    // Check for existing entries in guest_data table
+    let existingGuests = [];
+    if (emails.length > 0 || mobileNos.length > 0) {
+      existingGuests = await query(
+        `SELECT email, mobileno 
+         FROM guest_data 
+         WHERE email IN (?) OR mobileno IN (?)
+         UNION 
+         SELECT email, mobileno 
+         FROM intern_data 
+         WHERE email IN (?) OR mobileno IN (?)`,
+        [
+          emails.length > 0 ? emails : [null],
+          mobileNos.length > 0 ? mobileNos : [null],
+          emails.length > 0 ? emails : [null],
+          mobileNos.length > 0 ? mobileNos : [null]
+        ]
+      );
+    }
+    console.log(existingGuests);
+    const existingEmails = new Set(existingGuests.map(guest => guest.email));
+    const existingPhones = new Set(existingGuests.map(guest => guest.mobileno));
+
+    // Get the highest guestID number
+    const lastGuestQuery = 'SELECT guestID FROM guest_data ORDER BY guestID DESC LIMIT 1';
+    const lastGuestResult = await query(lastGuestQuery);
+    const lastGuestID = lastGuestResult.length > 0 ? lastGuestResult[0].guestID : null;
+    let lastGuestNumber = lastGuestID ? parseInt(lastGuestID.slice(3)) : 0;
+
+    for (const guest of guests) {
+      if (!existingEmails.has(guest.email) && !existingPhones.has(guest.mobileno)) {
+        lastGuestNumber++;
+        const newGuestID = `GST${String(lastGuestNumber).padStart(5, '0')}`;
+        console.log(newGuestID);
+
+        await query(
+          'INSERT INTO guest_data (guestID, fullName, email, mobileno, altmobileno, address, batchno, modeOfTraining, program, domain, megadriveStatus) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+          [
+            newGuestID,
+            guest.fullName,
+            guest.email,
+            guest.mobileno,
+            guest.altmobileno,
+            guest.address,
+            guest.batchno,
+            guest.modeOfTraining,
+            guest.program,
+            guest.domain,
+            guest.megadriveStatus
+          ]
+        );
+        acceptedGuests.push({ ...guest, guestID: newGuestID });
+      } else {
+        rejectedGuests.push(guest);
+      }
+    }
+
+    if (acceptedGuests.length > 0) {
+      await query(
+        'DELETE FROM guest_requests WHERE email IN (?) OR mobileno IN (?)',
+        [
+          acceptedGuests.map(guest => guest.email),
+          acceptedGuests.map(guest => guest.mobileno)
+        ]
+      );
+    }
+
+    const mailOptions = {
+      subject: 'Registration Success',
+      text: `Your request is approved`,
+    };
+    const emailPromises = acceptedGuests.map(guest => sendEmail(guest.email, mailOptions));
+    await Promise.all(emailPromises);
+
+    // Return accepted and rejected guests
+    res.status(200).json({ accepted: acceptedGuests, rejected: rejectedGuests });
+  } catch (error) {
+    console.error('Error processing guests:', error);
+    res.status(500).json({ error: 'Internal Server Error' });
+  }
+});
+
+
+
 //API to reject interns
-app.post("/reject-interns", async (req, res) => {
+app.post("/api/reject-interns", async (req, res) => {
   const candidates = req.body;
   console.log('Received candidates:', candidates);
   const requestIDs = candidates.map(candidate => candidate.requestID).filter(id => id != null);
@@ -1549,8 +1934,54 @@ app.post("/reject-interns", async (req, res) => {
 });
 
 
+// API to reject guests
+app.post("/api/reject-guests", async (req, res) => {
+  const guests = req.body;
+  console.log('Received guests for rejection:', guests);
+  
+  // Extract guest emails and mobile numbers
+  const emails = guests.map(guest => guest.email).filter(email => email != null);
+  const mobileNos = guests.map(guest => guest.mobileno).filter(mobileNo => mobileNo != null);
+  
+  if (emails.length === 0 && mobileNos.length === 0) {
+    return res.status(400).json({ message: 'No valid guests provided' });
+  }
+  
+  // Build query based on available emails and mobile numbers
+  let conditions = [];
+  let queryParams = [];
+  
+  if (emails.length > 0) {
+    conditions.push(`email IN (${emails.map(() => '?').join(',')})`);
+    queryParams.push(...emails);
+  }
+  
+  if (mobileNos.length > 0) {
+    conditions.push(`mobileno IN (${mobileNos.map(() => '?').join(',')})`);
+    queryParams.push(...mobileNos);
+  }
+  
+  const sqlQuery = `DELETE FROM guest_requests WHERE ${conditions.join(' OR ')}`;
+  
+  try {
+    const result = await query(sqlQuery, queryParams);
+    console.log("Guests rejected successfully!");
+    
+    if (result.affectedRows > 0) {
+      res.status(200).json({ message: `${result.affectedRows} guests rejected successfully` });
+    } else {
+      res.status(500).json({ message: 'No matching guest requests found' });
+    }
+  } catch (err) {
+    console.error('Error rejecting guests:', err);
+    res.status(500).json({ message: 'Server Error' });
+  }
+});
+
+
+
 //API to delete job for SA
-app.delete('/delete-job/:jobId', async (req, res) => {
+app.delete('/api/delete-job/:jobId', async (req, res) => {
   const { jobId } = req.params
   console.log("ON api")
   console.log(jobId)
@@ -1571,7 +2002,7 @@ app.delete('/delete-job/:jobId', async (req, res) => {
 
 
 
-app.get('/quizData/:token', async (req, res) => {
+app.get('/api/quizData/:token', async (req, res) => {
   const token = req.params.token;
 
   try {
@@ -1604,7 +2035,7 @@ app.get('/quizData/:token', async (req, res) => {
 });
 
 
-app.post('/update-quiz-status', (req, res) => {
+app.post('/api/update-quiz-status', (req, res) => {
   const { quizId, status } = req.body;
   const query = 'UPDATE quiz_data SET status = ? WHERE token = ?';
 
@@ -1617,7 +2048,7 @@ app.post('/update-quiz-status', (req, res) => {
   });
 });
 
-app.post('/publish-quiz', (req, res) => {
+app.post('/api/publish-quiz', (req, res) => {
   const { token, link } = req.body;
   const updateQuery = `
       UPDATE quiz_data
@@ -1635,7 +2066,7 @@ app.post('/publish-quiz', (req, res) => {
   });
 });
 
-app.post('/assign-quiz-to-domain', (req, res) => {
+app.post('/api/assign-quiz-to-domain', (req, res) => {
   const { domain, quizId } = req.body;
   pool.query('SELECT candidateID FROM intern_data WHERE domain = ?', [domain], (err, users) => {
 
@@ -1649,7 +2080,7 @@ app.post('/assign-quiz-to-domain', (req, res) => {
     });
   });
 });
-app.post('/assign-quiz-to-user', (req, res) => {
+app.post('/api/assign-quiz-to-user', (req, res) => {
   const { quizId, userIds } = req.body;
   const values = userIds.map(userId => [userId, quizId]);
 
@@ -1664,7 +2095,7 @@ app.post('/assign-quiz-to-user', (req, res) => {
 });
 
 
-app.get('/user-quizzes/:userId', (req, res) => {
+app.get('/api/user-quizzes/:userId', (req, res) => {
   const { userId } = req.params;
   console.log("userID", userId);
   const quizIdsQuery = `
@@ -1690,10 +2121,11 @@ app.get('/user-quizzes/:userId', (req, res) => {
       return;
     }
     const quizzesQuery = `
-            SELECT * 
-            FROM quiz_data 
-            WHERE token IN (?)
-        `;
+      SELECT q.token, q.quiz_name, s.schedule_quiz_from, s.schedule_quiz_to
+      FROM quiz_data q
+      LEFT JOIN quiz s ON q.token = s.token
+      WHERE q.token IN (?)
+    `;
     pool.query(quizzesQuery, [quizIds], (err, quizzesResults) => {
       if (err) {
         console.error('Error fetching quizzes:', err);
@@ -1711,7 +2143,41 @@ app.get('/user-quizzes/:userId', (req, res) => {
   });
 });
 
-app.get('/quiz_data/:token', (req, res) => {
+// app.get('/api/quiz_data/:token', (req, res) => {
+//   const { token } = req.params;
+//   console.log("token", token);
+//   const quizQuery = `
+//         SELECT 
+//             uq.quiz_id, 
+//             uq.internID, 
+//             uq.status,
+//             i.fullName AS user_name, 
+//             i.email AS user_email, 
+//             i.domain AS user_domain
+//         FROM user_quizzes uq
+//         JOIN intern_data i ON uq.internID = i.candidateID
+//         WHERE uq.quiz_id = ?
+//     `;
+
+//   pool.query(quizQuery, [token], (err, quizResults) => {
+//     if (err) {
+//       console.error('Error fetching quiz data:', err);
+//       res.status(500).send('Error fetching quiz data');
+//       return;
+//     }
+
+//     if (quizResults.length === 0) {
+//       res.status(404).send('Quiz not found');
+//       return;
+//     }
+//     console.log(quizResults);
+//     res.json(quizResults);
+
+//   });
+// });
+
+
+app.get('/api/quiz_data/:token', (req, res) => {
   const { token } = req.params;
   console.log("token", token);
   const quizQuery = `
@@ -1721,9 +2187,14 @@ app.get('/quiz_data/:token', (req, res) => {
             uq.status,
             i.fullName AS user_name, 
             i.email AS user_email, 
-            i.domain AS user_domain
+            i.domain AS user_domain,
+            g.fullname AS guest_name, 
+            g.email AS guest_email,
+            g.domain AS guest_domain
+
         FROM user_quizzes uq
-        JOIN intern_data i ON uq.internID = i.candidateID
+        LEFT JOIN intern_data i ON uq.internID = i.candidateID
+        LEFT JOIN guest_data g ON uq.internID = g.guestID  -- Adjust the join condition based on your schema
         WHERE uq.quiz_id = ?
     `;
 
@@ -1740,11 +2211,11 @@ app.get('/quiz_data/:token', (req, res) => {
     }
     console.log(quizResults);
     res.json(quizResults);
-
   });
 });
 
-app.post('/submit-quiz', async (req, res) => {
+
+app.post('/api/submit-quiz', async (req, res) => {
   try {
     const { userId, token, responses, startTime, endTime, duration } = req.body;
 
@@ -1771,7 +2242,7 @@ app.post('/submit-quiz', async (req, res) => {
 
 
 
-app.post('/submit-response', (req, res) => {
+app.post('/api/submit-response', (req, res) => {
   const { userId, quizId, responses } = req.body;
 
   const query = 'INSERT INTO response (user_id, quiz_id, question_id, answer) VALUES ?';
@@ -1788,7 +2259,7 @@ app.post('/submit-response', (req, res) => {
 });
 
 // Update quiz status in user_quizzes table
-app.put('/update-user-quiz-status/:userId/:quizId', (req, res) => {
+app.put('/api/update-user-quiz-status/:userId/:quizId', (req, res) => {
   const { userId, quizId } = req.params;
   const query = 'UPDATE user_quizzes SET status = ? WHERE internID = ? AND quiz_id = ?';
 
@@ -1805,7 +2276,7 @@ app.put('/update-user-quiz-status/:userId/:quizId', (req, res) => {
   });
 });
 
-app.get('/quiz-responses/:token', async (req, res) => {
+app.get('/api/quiz-responses/:token', async (req, res) => {
   const { token } = req.params;
   console.log("Token :", token);
   const sql = `SELECT q.pages_data,
@@ -1889,7 +2360,7 @@ WHERE r.token = ?
 
 
 
-app.post('/addFolder', (req, res) => {
+app.post('/api/addFolder', (req, res) => {
   const { folder } = req.body;
   const query = 'INSERT INTO quiz_data (folder_name) VALUES (?)';
   pool.query(query, [folder], (err, result) => {
@@ -1902,7 +2373,7 @@ app.post('/addFolder', (req, res) => {
   });
 });
 
-app.post('/addSubfolder', (req, res) => {
+app.post('/api/addSubfolder', (req, res) => {
   const { folder, subfolder } = req.body;
   const query = 'INSERT INTO quiz_data (folder_name, subfolder_name) VALUES (?, ?)';
   pool.query(query, [folder, subfolder], (err, result) => {
@@ -1915,7 +2386,7 @@ app.post('/addSubfolder', (req, res) => {
   });
 });
 
-app.post('/addQuiz', (req, res) => {
+app.post('/api/addQuiz', (req, res) => {
   const { folder, subfolder, quiz, type, token } = req.body;
   const query = 'INSERT INTO quiz_data (folder_name, subfolder_name, quiz_name, quiz_type, token) VALUES (?, ?, ?, ?, ?)';
   pool.query(query, [folder, subfolder, quiz, type, token], (err, result) => {
@@ -1928,7 +2399,7 @@ app.post('/addQuiz', (req, res) => {
   });
 });
 
-app.get('/getData', (req, res) => {
+app.get('/api/getData', (req, res) => {
   const query = 'SELECT * FROM quiz_data';
   pool.query(query, (err, results) => {
     if (err) {
@@ -1940,25 +2411,31 @@ app.get('/getData', (req, res) => {
   });
 });
 
-app.get('/get-quiz/:token', (req, res) => {
+app.get('/api/get-quiz/:token', (req, res) => {
   const { token } = req.params;
   const query = 'SELECT * FROM quiz WHERE token = ?';
+
   pool.query(query, [token], (err, results) => {
     if (err) {
       console.error('Error fetching quiz:', err);
-      res.status(500).send('Failed to fetch quiz');
-      return;
+      return res.status(500).json({ message: 'Internal Server Error' });
     }
+
     if (results.length === 0) {
-      res.status(404).send('Quiz not found');
-      return;
+      return res.status(404).json({ message: 'Quiz not found' });
     }
+
+    // Add additional checks if necessary, for example:
+    if (!results[0].pages_data) {
+      return res.status(400).json({ message: 'Pages data missing' });
+    }
+
     res.status(200).json(results[0]);
   });
 });
 
 
-app.get('/calculate-results/:quizToken/:userId', (req, res) => {
+app.get('/api/calculate-results/:quizToken/:userId', (req, res) => {
   const { quizToken, userId } = req.params;
 
   const correctAnswersQuery = `
@@ -2047,8 +2524,9 @@ app.get('/calculate-results/:quizToken/:userId', (req, res) => {
   });
 });
 
-app.get('/quiz-analysis/:userId/:quizToken', (req, res) => {
+app.get('/api/quiz-analysis/:userId/:quizToken', (req, res) => {
   const { userId, quizToken } = req.params;
+  console.log(userId, quizToken)
   const analysisQuery = `
         SELECT responses.responses, responses.start_time, responses.end_time, responses.duration, results.score, results.grade, quiz.pages_data
         FROM responses
@@ -2056,12 +2534,13 @@ app.get('/quiz-analysis/:userId/:quizToken', (req, res) => {
         INNER JOIN quiz ON responses.token = quiz.token
         WHERE responses.user_id = ? AND responses.token = ?
     `;
-  pool.query(analysisQuery, [userId, quizToken], (err, results) => {
+  query(analysisQuery, [userId, quizToken], (err, results) => {
     if (err) {
+      console.log(err)
       console.error('Error fetching quiz analysis:', err);
       return res.status(500).json({ error: 'An error occurred while fetching quiz analysis' });
     }
-
+    console.log("RESULTS :", results);
     if (results.length === 0) {
       return res.status(404).json({ error: 'Analysis not found' });
     }
@@ -2108,8 +2587,9 @@ app.get('/quiz-analysis/:userId/:quizToken', (req, res) => {
   });
 });
 
-app.post('/save-questions', (req, res) => {
+app.post('/api/save-questions', (req, res) => {
   const { token, no_of_pages, pages_data } = req.body;
+
   if (!token || !no_of_pages || !pages_data) {
     return res.status(400).send('Missing required fields');
   }
@@ -2145,7 +2625,7 @@ app.post('/save-questions', (req, res) => {
   });
 });
 
-app.get('/grades', (req, res) => {
+app.get('/api/grades', (req, res) => {
   const query = 'SELECT * FROM grades';
   pool.query(query, (err, results) => {
     if (err) throw err;
@@ -2153,7 +2633,7 @@ app.get('/grades', (req, res) => {
   });
 });
 
-app.post('/upload-data', (req, res) => {
+app.post('/api/upload-data', (req, res) => {
   const { token, no_of_pages, pages_data } = req.body;
 
   const query = 'INSERT INTO quiz (token, no_of_pages, pages_data) VALUES (?, ?, ?)';
@@ -2177,7 +2657,7 @@ const validateToken = (token) => {
   });
 };
 
-app.get('/quiz-options/:token', async (req, res) => {
+app.get('/api/quiz-options/:token', async (req, res) => {
   const { token } = req.params;
   try {
     const query = 'SELECT * FROM quiz WHERE token = ?';
@@ -2209,7 +2689,7 @@ app.get('/quiz-options/:token', async (req, res) => {
 });
 
 
-app.post('/quiz-options', async (req, res) => {
+app.post('/api/quiz-options', async (req, res) => {
   const {
     token,
     timeLimit,
@@ -2253,7 +2733,7 @@ app.post('/quiz-options', async (req, res) => {
   }
 });
 
-app.get('/getAllData', async (req, res) => {
+app.get('/api/getAllData', async (req, res) => {
   await query('SELECT * FROM quiz_data', (err, results) => {
     if (err) {
       console.error('Error fetching data:', err);
@@ -2264,7 +2744,7 @@ app.get('/getAllData', async (req, res) => {
   });
 });
 
-app.put('/renameQuiz/:token', async (req, res) => {
+app.put('/api/renameQuiz/:token', async (req, res) => {
   const { token } = req.params;
   const { name: newName } = req.body;
   console.log(token, newName);
@@ -2280,7 +2760,7 @@ app.put('/renameQuiz/:token', async (req, res) => {
 });
 
 
-app.delete('/deleteQuiz/:token', (req, res) => {
+app.delete('/api/deleteQuiz/:token', (req, res) => {
   const { token } = req.params;
   const query = 'DELETE FROM quiz_data WHERE token = ?';
   pool.query(query, [token], (err, result) => {
@@ -2293,7 +2773,20 @@ app.delete('/deleteQuiz/:token', (req, res) => {
   });
 });
 
-app.get('/domains', (req, res) => {
+app.delete('/api/deleteFolder/:folder', (req, res) => {
+  const { folder } = req.params;
+  const query = 'DELETE FROM quiz_data WHERE folder_name = ?';
+  pool.query(query, [folder], (err, result) => {
+    if (err) {
+      console.error('Error deleting folder:', err);
+      res.status(500).send('Failed to delete folder');
+      return;
+    }
+    res.status(200).send('folder deleted successfully');
+  });
+});
+
+app.get('/api/domains', (req, res) => {
   const query = 'SELECT DISTINCT domain FROM intern_data';
   pool.query(query, (err, results) => {
     if (err) {
@@ -2305,7 +2798,20 @@ app.get('/domains', (req, res) => {
   });
 });
 
-app.get('/interns', (req, res) => {
+app.get('/api/guest_domains', (req, res) => {
+  const query = 'SELECT DISTINCT domain FROM guest_data';
+  pool.query(query, (err, results) => {
+    if (err) {
+      console.error('Error fetching domains:', err);
+      res.status(500).send('Error fetching domains');
+      return;
+    }
+    res.status(200).json(results);
+  });
+});
+
+
+app.get('/api/interns', (req, res) => {
   const query = 'SELECT id, name, mail, domain FROM intern_data';
   pool.query(query, (err, results) => {
     if (err) {
@@ -2320,7 +2826,7 @@ app.get('/interns', (req, res) => {
 
 
 
-app.get('/interns/:id', (req, res) => {
+app.get('/api/interns/:id', (req, res) => {
   const query = 'SELECT id, name, mail, domain FROM intern_data WHERE id = ?';
   pool.query(query, [req.params.id], (err, results) => {
     if (err) {
@@ -2336,7 +2842,7 @@ app.get('/interns/:id', (req, res) => {
   });
 });
 
-app.get('/submissions', (req, res) => {
+app.get('/api/submissions', (req, res) => {
   const query = 'SELECT * FROM intern_data ORDER BY domain';
   pool.query(query, (err, results) => {
     if (err) {
@@ -2350,7 +2856,7 @@ app.get('/submissions', (req, res) => {
 
 
 
-app.get('/sa-job-applicants/', async (req, res) => {
+app.get('/api/sa-job-applicants/', async (req, res) => {
   const { status } = req.query
   console.log("got  here")
   const sql = `SELECT applied_students.*,
@@ -2376,7 +2882,7 @@ app.get('/sa-job-applicants/', async (req, res) => {
 
 
 //API to search jobs using candidateId, hrid
-app.get('/hr-job-applicant-history/', async (req, res) => {
+app.get('/api/hr-job-applicant-history/', async (req, res) => {
   const { candidateId, hrId } = req.query
 
 
@@ -2400,7 +2906,7 @@ app.get('/hr-job-applicant-history/', async (req, res) => {
   }
 });
 
-app.get('/intern-job-applicant-history/', async (req, res) => {
+app.get('/api/intern-job-applicant-history/', async (req, res) => {
   const { candidateId } = req.query;
 
   const sql_q = "SELECT * from applied_students where candidateID = ?";
@@ -2422,7 +2928,7 @@ app.get('/intern-job-applicant-history/', async (req, res) => {
 });
 
 //API for hr dashboard statistics
-app.get('/hr-job-applicants/', async (req, res) => {
+app.get('/api/hr-job-applicants/', async (req, res) => {
   const { status, hrId } = req.query
   const sql = `SELECT applied_students.*,
       J.JobId,
@@ -2446,7 +2952,7 @@ app.get('/hr-job-applicants/', async (req, res) => {
   }
 });
 
-app.get("/hr-view-jobs", async (req, res) => {
+app.get("/api/hr-view-jobs", async (req, res) => {
   const { hrId } = req.query
 
   try {
@@ -2466,7 +2972,7 @@ app.get("/hr-view-jobs", async (req, res) => {
 });
 
 
-app.get("/hr-view-jobs-status", async (req, res) => {
+app.get("/api/hr-view-jobs-status", async (req, res) => {
   const { status, hrId } = req.query
 
   try {
@@ -2488,7 +2994,7 @@ app.get("/hr-view-jobs-status", async (req, res) => {
     res.status(500).json({ message: 'Server Error' });
   }
 });
-app.get("/view-jobs-status", async (req, res) => {
+app.get("/api/view-jobs-status", async (req, res) => {
   const { status } = req.query
 
   try {
@@ -2510,7 +3016,7 @@ app.get("/view-jobs-status", async (req, res) => {
 });
 
 
-app.get("/hr-view-leads", async (req, res) => {
+app.get("/api/hr-view-leads", async (req, res) => {
   const{hrId}=req.query
   try {
     const jobs = await query(`SELECT * FROM companies WHERE publishedHrID='${hrId}'`);
@@ -2521,7 +3027,7 @@ app.get("/hr-view-leads", async (req, res) => {
   }
 });
 
-app.get("/hr-other-leads", async (req, res) => {
+app.get("/api/hr-other-leads", async (req, res) => {
   const{hrId}=req.query
   try {
     const jobs = await query(`SELECT * FROM companies WHERE publishedHrID!='${hrId}'`);
@@ -2532,12 +3038,12 @@ app.get("/hr-other-leads", async (req, res) => {
   }
 });
 
-app.post("/add-hr",async(req,res)=>{
-  const {address,companyName,email,hrId,hrName,phoneNumber,publishedHr,website}=req.body;
+app.post("/api/add-hr",async(req,res)=>{
+  const {address,companyName,email,hrId,hrName,phoneNumber,website}=req.body;
 
   try{
     console.log("In")
-    const respo=await query(`INSERT INTO companies (companyName,website,mobileNo,email,address,hrName,publishedHr,publishedHrID) VALUES(?,?,?,?,?,?,?,?)`,[companyName,website,phoneNumber,email,address,hrName,publishedHr,hrId])
+    const respo=await query(`INSERT INTO companies (companyName,website,mobileNo,email,address,hrName,publishedHrID) VALUES(?,?,?,?,?,?,?)`,[companyName,website,phoneNumber,email,address,hrName,hrId])
     console.log("restp",respo)
     res.status(200).json({"message":"Company added Successfully"})
   }catch(error){
@@ -2546,3 +3052,546 @@ app.post("/add-hr",async(req,res)=>{
    
 })
 
+
+
+app.get('/session-check', (req, res) => {
+  console.log("API hit From session check ")
+  console.log("Session Data:", req.session);
+  if (req.session.user) {
+    console.log(req.session.user);
+
+    res.json({ user: req.session.user });
+
+  } else {
+    console.log("Not Logged in")
+    res.status(401).json({ message: 'Not logged in' });
+  }
+});
+
+
+
+
+app.get('/api/generate-certificate-id/:role/:month', async (req, res) => {
+  const { role, month } = req.params;
+  const year = new Date().getFullYear().toString().slice(-2);
+  const roleInitial = role.charAt(0).toUpperCase();
+
+  try {
+    // Fetch the last sequence number for the given role and month
+    const sql =`SELECT certificationId FROM certificates WHERE certificationId LIKE ? ORDER BY certificationId DESC LIMIT 1;`
+    const likePattern = `RS${year}${roleInitial}%`;
+    
+    query(sql, [likePattern], (err, result) => {
+      if (err) {
+        console.error('Database query error:', err);
+        return res.status(500).json({ error: 'Error fetching last sequence number' });
+      }
+
+      let newSequenceNumber = '01'; // Default sequence number
+
+      if (result.length > 0) {
+        const lastId = result[0].certificationId;
+        const lastMonth = lastId.slice(5, 7); // Extract the month from the last ID
+        console.log(lastMonth);
+        if (lastMonth === month) {
+          let lastSequenceNumber = parseInt(lastId.slice(-2), 10);
+          newSequenceNumber = (lastSequenceNumber + 1).toString().padStart(2, '0');
+        }
+      }
+
+      const newCertificationId = `RS${year}${roleInitial}${month}${newSequenceNumber}`;
+
+      res.json({ newCertificationId });
+    });
+  } catch (error) {
+    console.error('Error in generating certification ID:', error);
+    res.status(500).json({ error: 'Internal Server Error' });
+  }
+});
+
+
+app.get('/api/show_all_certificates', (req, res) => {
+  const sql = 'SELECT * FROM certificates';
+  query(sql, (err, rows) => {
+    if (err) {
+      console.error('Error fetching certificates:', err);
+      return res.status(500).json({ error: 'Internal Server Error' });
+    }
+    res.json(rows);
+  });
+});
+
+
+  app.post('/api/save_certificate_data', async (req, res) => {
+    const { studentName, domain, position, certificationId, startDate, endDate } = req.body;
+    
+    const sql = 'INSERT INTO certificates (studentName, domain, position, certificationId, startDate, endDate) VALUES (?, ?, ?, ?, ?, ?)';
+    
+    query(sql, [studentName, domain, position, certificationId, startDate, endDate], (err, result) => {
+      if (err) {
+        console.error(err);
+        return res.status(500).send('Error saving certificate details');
+      }
+      
+      res.status(200).send('Certificate details saved successfully');
+    });
+  });
+
+
+
+
+  
+// API to create course
+app.post('/api/create_course', async(req, res) => {
+  const { course_name, domains } = req.body;
+  console.log("body", req.body)
+  const sql  = 'INSERT INTO courses (course_name, material, belongs) VALUES (?, ?, ?)';
+  await query(sql, [course_name, JSON.stringify([]), JSON.stringify(domains)], (err) => {
+    if (err) {
+      console.error('Error creating course:', err);
+      res.status(500).json({ error: 'Failed to create course' });
+    } else {
+      res.status(201).json({ message: 'Course created successfully' });
+    }
+  });
+});
+
+
+app.get('/api/courses', async (req, res) => {
+  try {
+    const courses = await query('SELECT * FROM courses');
+    res.status(200).json(courses);
+  } catch (error) {
+    console.error('Error fetching courses:', error);
+    res.status(500).json({ error: 'Failed to fetch courses' });
+  }
+});
+
+
+
+
+app.get('/api/course_data/:courseName', async (req, res) => {
+  const { courseName } = req.params;
+
+  try {
+      const data = await query(`SELECT * FROM courses WHERE course_name = "${courseName}"`);
+      if (!data || !data.length) {
+          return res.status(404).json({ message: 'Course not found.' });
+      }
+      res.json(data); // Ensure this is sending a JSON object
+  } catch (error) {
+      console.error('Database query error:', error);
+      res.status(500).json({ message: 'Internal Server Error' });
+  }
+});
+
+
+
+
+app.get('/api/course_data/:courseName', (req, res) => {
+  const { courseName } = req.params;
+  const uploadsDir = path.join(__dirname, 'uploads');
+
+  console.log("courseName:", courseName);
+  console.log('Uploads Directory:', uploadsDir);
+
+  const data = query(`select * from courses where course_name = "${courseName}"`);
+  console.log("Data :", data);
+  fs.readdir(uploadsDir, (err, files) => {
+      if (err) {
+          console.error('Error reading directory:', err);
+          return res.status(500).json({ message: 'Internal Server Error' });
+      }
+      
+      console.log("Available files:", files);
+
+      // Get all files without filtering
+      const courseFiles = files;
+
+      console.log("All courseFiles:", courseFiles);
+
+      const material = courseFiles.map(file => {
+          const filePath = path.join(uploadsDir, file);
+          const stats = fs.statSync(filePath);
+          return {
+              name: file,
+              url: `/uploads/${file}`,
+              size: stats.size,
+              lastModified: stats.mtime,
+              mimetype: mime.lookup(file) || 'application/octet-stream'
+          };
+      });
+
+      if (material.length === 0) {
+          return res.status(404).json({ message: 'No material found for this course.' });
+      }
+
+      res.json(material);
+  });
+});
+
+
+
+// app.post('/api/upload_files/:courseName', upload.array('files', 10), async (req, res) => {
+//   const courseName = req.params.courseName;
+
+//   if (!req.files || req.files.length === 0) {
+//     return res.status(400).json({ error: 'No files uploaded' });
+//   }
+
+//   try {
+//     // Fetch the existing material for the course
+//     const results = await query('SELECT material FROM courses WHERE course_name = ?', [courseName]);
+//     const course = results[0];
+
+//     let material = [];
+
+//     if (course && typeof course.material === 'string') {
+//       if (course.material.trim() !== "") {
+//         try {
+//           material = JSON.parse(course.material);
+//         } catch (error) {
+//           console.error('Error parsing material JSON:', error);
+//           material = [];
+//         }
+//       }
+//     }
+
+//     // Determine the next available materialID
+//     let nextMaterialID = 1;
+//     if (material.length > 0) {
+//       const lastMaterial = material[material.length - 1];
+//       nextMaterialID = lastMaterial.materialID + 1;
+//     }
+
+//     // Map the uploaded files and assign a unique sequential materialID
+//     const files = req.files.map((file, index) => ({
+//       materialID: nextMaterialID + index, // Assign a sequential ID
+//       name: file.originalname,
+//       url: `/uploads/${file.originalname}`,
+//       mimetype: file.mimetype
+//     }));
+
+//     // Combine the existing materials with the newly uploaded files
+//     const updatedMaterial = [...material, ...files];
+
+//     // Update the database with the new material list
+//     await query('UPDATE courses SET material = ? WHERE course_name = ?', [JSON.stringify(updatedMaterial), courseName]);
+
+//     res.status(200).json({ message: 'Files uploaded successfully' });
+//   } catch (error) {
+//     console.error('Error uploading files:', error);
+//     res.status(500).json({ error: 'Internal server error' });
+//   }
+// });
+
+
+// Endpoint to upload files
+app.post('/api/upload_files/:courseName', upload.array('files', 100), async (req, res) => {
+  const courseName = req.params.courseName;
+
+  if (!req.files || req.files.length === 0) {
+    return res.status(400).json({ error: 'No files uploaded' });
+  }
+
+  try {
+    const results = await query('SELECT material FROM courses WHERE course_name = ?', [courseName]);
+    const course = results[0];
+
+    let material = [];
+
+    if (course && course.material) {
+      console.log('Raw material from database:', course.material);
+      // Check if it's a string that needs parsing
+      if (typeof course.material === 'string') {
+        try {
+          material = JSON.parse(course.material) || [];
+        } catch (error) {
+          console.error('Error parsing material JSON:', error);
+          material = [];
+        }
+      } else {
+        // If it's already an object, use it directly
+        material = course.material;
+      }
+    }
+
+    let nextMaterialID = material.length > 0 ? material[material.length - 1].materialID + 1 : 1;
+
+    const newFiles = req.files.map((file, index) => ({
+      materialID: nextMaterialID + index,
+      name: file.originalname,
+      url: `/uploads/${file.originalname}`,
+      mimetype: file.mimetype,
+    }));
+
+    const updatedMaterial = [...material, ...newFiles];
+
+    await query('UPDATE courses SET material = ? WHERE course_name = ?', [JSON.stringify(updatedMaterial), courseName]);
+
+    res.status(200).json({ message: 'Files uploaded successfully', material: updatedMaterial });
+  } catch (error) {
+    console.error('Error uploading files:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+
+
+
+app.post('/api/courses/:courseName/update_files', async (req, res) => {
+  const { courseName } = req.params;
+  const { files, deleteFiles } = req.body; // Extract files to add and files to delete
+
+  try {
+    // Fetch existing course materials from the database
+    const results = await query('SELECT material FROM courses WHERE course_name = ?', [courseName]);
+    const course = results[0];
+    
+    let material = course.material ? JSON.parse(course.material) : [];
+
+    // Remove files from the uploads folder and material array
+    deleteFiles.forEach(fileName => {
+      const filePath = path.join(__dirname, 'uploads', fileName);
+      if (fs.existsSync(filePath)) {
+        fs.unlinkSync(filePath);  // Delete the file from the uploads folder
+      }
+      
+      // Filter the material array to remove the deleted file
+      material = material.filter(file => file.name !== fileName);
+    });
+
+    // Append new files to the material array
+    files.forEach(file => {
+      // Ensure each new file gets a unique materialID
+      const materialID = material.length > 0 ? material[material.length - 1].materialID + 1 : 1;
+      material.push({ ...file, materialID });
+    });
+
+    // Update the database with the new material list
+    await query('UPDATE courses SET material = ? WHERE course_name = ?', [JSON.stringify(material), courseName]);
+
+    res.status(200).json({ message: 'Files updated successfully', material });
+  } catch (error) {
+    console.error('Error updating files:', error);
+    res.status(500).json({ message: 'Internal Server Error' });
+  }
+});
+
+
+
+
+
+
+
+
+app.post('/api/courses/:courseName/remove_file', (req, res) => {
+  const { courseName } = req.params;
+  const { fileName } = req.body;
+
+  // Log incoming request
+  console.log("Request body:", req.body);
+
+  // Construct the file path (directly in the uploads folder)
+  const uploadsDir = path.join(__dirname, 'uploads');
+  const filePath = path.join(uploadsDir, fileName);
+
+  console.log("Uploads directory path:", uploadsDir);
+  console.log("File path:", filePath);
+
+  // Check if the uploads directory exists
+  if (!fs.existsSync(uploadsDir)) {
+      console.log("Uploads directory not found:", uploadsDir);
+      return res.status(404).json({ message: 'Uploads directory not found' });
+  }
+
+  // Log files in the uploads directory for debugging
+  try {
+      const filesInDirectory = fs.readdirSync(uploadsDir);
+      console.log("Files in uploads directory:", filesInDirectory);
+  } catch (error) {
+      console.error("Error reading uploads directory:", error);
+      return res.status(500).json({ message: 'Error accessing uploads directory' });
+  }
+
+  // Check if the file exists in the uploads folder
+  if (fs.existsSync(filePath)) {
+      try {
+          // Delete the file from the filesystem
+          fs.unlinkSync(filePath);
+          console.log("File deleted successfully:", filePath);
+
+          // Query to update the material field in the database by removing the entire JSON object that matches the file
+          const updateQuery = `
+              UPDATE courses
+              SET material = JSON_REMOVE(material,
+                  JSON_UNQUOTE(JSON_SEARCH(material, 'one', ?))
+              )
+              WHERE course_name = ?`;
+
+          // Execute the database query to remove the entire JSON object from the material array
+          query(updateQuery, [fileName, courseName], (err, result) => {
+              if (err) {
+                  console.error("Error updating material field in database:", err);
+                  return res.status(500).json({ message: 'Error updating database' });
+              }
+
+              console.log("Material updated in database:", result);
+              return res.status(200).json({ message: 'File deleted successfully and material updated in the database' });
+          });
+
+      } catch (error) {
+          console.error("Error deleting file:", error);
+          return res.status(500).json({ message: 'Error deleting file' });
+      }
+  } else {
+      console.log("File not found:", filePath);
+      return res.status(404).json({ message: 'File not found' });
+  }
+});
+
+
+
+
+
+
+app.get('/api/intern-courses/:internId', async (req, res) => {
+  const internID = req.params.internId;
+
+  try {
+    const [internData] = await query('SELECT domain FROM intern_data WHERE candidateID = ?', [internID]);
+    if (!internData || !internData.domain) {
+      return res.status(404).json({ message: 'No domain found for the intern.' });
+    }
+
+    const internDomain = internData.domain;
+    console.log("internDomain :", internDomain);
+    const courses = await query(`
+      SELECT * FROM courses 
+      WHERE JSON_CONTAINS(belongs, JSON_QUOTE(?))`, 
+      [internDomain]
+    );
+    console.log("courses :", courses);
+    res.status(200).json(courses);
+  } catch (error) {
+    console.error('Error fetching intern courses:', error);
+    res.status(500).json({ error: 'Failed to fetch courses for the intern.' });
+  }
+});
+
+// app.get('/api/intern-progress/:internID', async (req, res) => {
+//   const internID = req.params.internID;
+//   try {
+//     const result = await query(`SELECT progress FROM course_status WHERE internID = ?`, [internID]);
+//     console.log("Result from database:", result);
+    
+//     if (result.length > 0) {
+//       const progressData = result[0].progress; // Assuming progress is already an object
+//       console.log("Progress data:", progressData);
+
+//       // No need to parse if it's already an object
+//       res.json({ course_status: progressData });
+//     } else {
+//       res.json({ course_status: {} });
+//     }
+//   } catch (error) {
+//     console.error('Error fetching course progress:', error);
+//     res.status(500).json({ error: 'Failed to fetch course progress' });
+//   }
+// });
+
+
+app.get('/api/intern-progress/:internID', async (req, res) => {
+  const internID = req.params.internID;
+
+  try {
+    const result = await query(`SELECT progress FROM course_status WHERE internID = ?`, [internID]);
+
+    if (result.length > 0) {
+      const progress = result[0].progress;
+      const courseData = [];
+
+      for (const courseID in progress) {
+        const completedMaterials = Object.values(progress[courseID]).filter(Boolean).length;
+
+        const courseResult = await query(`
+          SELECT course_name, material
+          FROM courses
+          WHERE id = ?
+        `, [courseID]);
+
+        console.log("Result :", courseResult)
+        if (courseResult.length > 0) {
+          const { course_name, material } = courseResult[0];
+
+          // Parse the material field, assuming it is stored as a JSON array
+          const total_materials = Array.isArray(material) ? material.length : 0;
+
+          courseData.push({
+            course_name,
+            completed_materials: completedMaterials,
+            total_materials,
+          });
+        }
+      }
+
+
+      console.log("courseData :", courseData);
+      res.json({ course_status: progress, courseData });
+    } else {
+      res.json({ course_status: {} });
+    }
+  } catch (error) {
+    console.error('Error fetching course progress:', error);
+    res.status(500).json({ error: 'Failed to fetch course progress' });
+  }
+});
+
+
+
+
+
+
+app.post('/api/update-progress', async (req, res) => {
+  const { internID, progress } = req.body; 
+  console.log("body:", req.body);
+  
+  try {
+    const result = await query(`SELECT progress FROM course_status WHERE internID = ?`, [internID]);
+
+    // Generate the complete progress object, filling with false where necessary
+    const completeProgress = {};
+    for (const courseId in progress) {
+      completeProgress[courseId] = {};
+      const materials = progress[courseId];
+
+      for (const materialId in materials) {
+        completeProgress[courseId][materialId] = materials[materialId] === true;
+      }
+    }
+
+    if (result.length > 0) {
+      // Directly replace the progress with the new value
+      const updateResult = await query(
+        `UPDATE course_status SET progress = ? WHERE internID = ?`,
+        [JSON.stringify(completeProgress), internID]
+      );
+
+      if (updateResult.affectedRows === 0) {
+        return res.status(404).json({ error: 'Intern progress not found.' });
+      }
+
+      res.status(200).json({ message: 'Progress updated successfully' });
+    } else {
+      // Insert new progress if no existing record
+      await query(
+        `INSERT INTO course_status (internID, progress) VALUES (?, ?)`,
+        [internID, JSON.stringify(completeProgress)]
+      );
+      res.status(201).json({ message: 'Progress saved successfully' });
+    }
+  } catch (error) {
+    console.error('Error updating progress:', error);
+    res.status(500).json({ error: 'Failed to update progress. Internal server error.' });
+  }
+});
