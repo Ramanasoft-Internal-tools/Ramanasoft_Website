@@ -32,7 +32,7 @@ if (!fs.existsSync(uploadsDir)){
     fs.mkdirSync(uploadsDir);
 }
 
-const upload = multer({ storage: multer.memoryStorage() });
+// const upload = multer({ storage: multer.memoryStorage() });
 
 const storage = multer.diskStorage({
     destination: function (req, file, cb) {
@@ -43,7 +43,7 @@ const storage = multer.diskStorage({
     }
 });
 
-// const upload = multer({ storage: storage });
+const upload = multer({ storage: storage });
 app.use('/uploads', express.static('uploads'));
 
 app.use(bodyParser.json());
