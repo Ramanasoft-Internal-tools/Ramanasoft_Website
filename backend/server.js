@@ -18,12 +18,6 @@ const path = require('path');
 const fs = require('fs');
 const mime = require('mime');
 
-// Allow all domains to access your API (you can restrict this to specific origins if needed)
-app.use(cors({
-    origin: 'https://pvpk06.github.io',  // Restrict access to your frontend
-    methods: ['GET', 'POST', 'PUT', 'DELETE'],
-    allowedHeaders: ['Content-Type', 'Authorization']
-}));
 
 const PORT = process.env.PORT ||  5000;
 
@@ -31,8 +25,6 @@ const uploadsDir = path.join(__dirname, 'uploads');
 if (!fs.existsSync(uploadsDir)){
     fs.mkdirSync(uploadsDir);
 }
-
-// const upload = multer({ storage: multer.memoryStorage() });
 
 const storage = multer.diskStorage({
     destination: function (req, file, cb) {
@@ -44,6 +36,10 @@ const storage = multer.diskStorage({
 });
 
 const upload = multer({ storage: storage });
+
+const uploadResume = multer({ storage: multer.memoryStorage() });
+
+
 app.use('/uploads', express.static('uploads'));
 
 app.use(bodyParser.json());
@@ -136,7 +132,7 @@ app.put("/api/applications/:id/status", async (req, res) => {
 })
 
 //Intern job apply api
-app.post('/api/apply-job', upload.single('resume'), async (req, res) => {
+app.post('/api/apply-job', uploadResume.single('resume'), async (req, res) => {
   
   const { fullName, jobId, candidateId, jobRole, email, companyName, technology, mobileNumber, gender, yearOfPassedOut, experience } = req.body;
   const resume = req.file ? req.file.buffer : null;
@@ -163,7 +159,7 @@ app.post('/api/apply-job', upload.single('resume'), async (req, res) => {
 
 
 //Intern job apply api
-app.post('/api/guest-apply-job', upload.single('resume'), async (req, res) => {
+app.post('/api/guest-apply-job', uploadResume.single('resume'), async (req, res) => {
   console.log(req.body);
   const { fullName, jobId, guestID, jobRole, email, companyName, technology, mobileNumber, gender, yearOfPassedOut, experience } = req.body;
   const resume = req.file ? req.file.buffer : null;
@@ -2080,6 +2076,24 @@ app.post('/api/assign-quiz-to-domain', (req, res) => {
     });
   });
 });
+
+
+app.post('/api/assign-quiz-to-guest-domain', (req, res) => {
+  const { domain, quizId } = req.body;
+  pool.query('SELECT guestID FROM guest_data WHERE domain = ?', [domain], (err, users) => {
+
+    if (err) throw err;
+    const userIds = users.map(user => user.guestID);
+    const values = userIds.map(userId => [userId, quizId]);
+    console.log(userIds);
+    pool.query('INSERT INTO user_quizzes (guestID, quiz_id) VALUES ?', [values], (err, result) => {
+      if (err) throw err;
+      res.json({ success: true });
+    });
+  });
+});
+
+
 app.post('/api/assign-quiz-to-user', (req, res) => {
   const { quizId, userIds } = req.body;
   const values = userIds.map(userId => [userId, quizId]);
