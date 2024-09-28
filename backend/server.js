@@ -46,14 +46,7 @@ app.use(bodyParser.json());
 app.use(express.urlencoded({ extended: true }));
 
 // Use CORS middleware
-app.use(cors({
-  origin: 'https://ramanasoft.com', // Allow this origin
-  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'], // Allowed HTTP methods
-  allowedHeaders: ['Content-Type', 'Authorization'], // Allowed headers
-  credentials: true, // Include cookies in requests if needed
-}));
-
-// Handle preflight requests (OPTIONS)
+app.use(cors())
 app.options('*', cors());
 
 
