@@ -45,10 +45,11 @@ app.use('/uploads', express.static('uploads'));
 app.use(bodyParser.json());
 app.use(express.urlencoded({ extended: true }));
 app.use(cors({
-  origin: '*', // Allow all origins
-  methods: 'GET,POST,OPTIONS', // Allowed methods
-  allowedHeaders: 'Content-Type' // Allowed headers
+  origin: '*',
+  methods: 'GET,POST,PUT,DELETE,OPTIONS',
+  allowedHeaders: 'Content-Type,Authorization'
 }));
+
 var server = app.listen(PORT, () => {
   console.log(`Server is running on port ${PORT}`);
 });
