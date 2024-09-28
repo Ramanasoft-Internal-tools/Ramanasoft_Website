@@ -45,10 +45,13 @@ app.use('/uploads', express.static('uploads'));
 app.use(bodyParser.json());
 app.use(express.urlencoded({ extended: true }));
 app.use(cors({
-  origin: '*',
-  methods: 'GET,POST,PUT,DELETE,OPTIONS',
-  allowedHeaders: 'Content-Type,Authorization'
+  origin: 'https://ramanasoft.com', // Allow the specific domain
+  methods: ['GET', 'POST', 'OPTIONS'], // Allow required HTTP methods
+  allowedHeaders: ['Content-Type', 'Authorization'], // Allow necessary headers
+  credentials: true // If you need to include credentials like cookies
 }));
+
+app.options('*', cors());
 
 var server = app.listen(PORT, () => {
   console.log(`Server is running on port ${PORT}`);
