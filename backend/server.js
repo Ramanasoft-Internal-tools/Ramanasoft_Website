@@ -44,18 +44,13 @@ app.use('/uploads', express.static('uploads'));
 
 app.use(bodyParser.json());
 app.use(express.urlencoded({ extended: true }));
-
-// Use CORS middleware
-app.use(cors())
-app.options('*', cors());
-
-
+app.use(cors());
 var server = app.listen(PORT, () => {
   console.log(`Server is running on port ${PORT}`);
 });
 
 
-var io = require('socket.io')(server, { cors: { origin: '*' } });
+// var io = require('socket.io')(server, { cors: { origin: '*' } });
 
 const query = util.promisify(pool.query).bind(pool);
 
@@ -3403,12 +3398,6 @@ app.post('/api/upload_files/:courseName', upload.array('files', 100), async (req
     res.status(500).json({ error: 'Internal server error' });
   }
 });
-const poppler = require('pdf-poppler');
-const mammoth = require('mammoth');
-const pdftohtml = require('pdftohtmljs')
-
-
-
 // app.post('/api/upload_files/:courseName', upload.array('files', 100), async (req, res) => {
 //   const courseName = req.params.courseName;
 
