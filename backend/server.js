@@ -44,14 +44,18 @@ app.use('/uploads', express.static('uploads'));
 
 app.use(bodyParser.json());
 app.use(express.urlencoded({ extended: true }));
+
+// Use CORS middleware
 app.use(cors({
-  origin: 'https://ramanasoft.com', // Allow the specific domain
-  methods: ['GET', 'POST', 'OPTIONS'], // Allow required HTTP methods
-  allowedHeaders: ['Content-Type', 'Authorization'], // Allow necessary headers
-  credentials: true // If you need to include credentials like cookies
+  origin: 'https://ramanasoft.com', // Allow this origin
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'], // Allowed HTTP methods
+  allowedHeaders: ['Content-Type', 'Authorization'], // Allowed headers
+  credentials: true, // Include cookies in requests if needed
 }));
 
+// Handle preflight requests (OPTIONS)
 app.options('*', cors());
+
 
 var server = app.listen(PORT, () => {
   console.log(`Server is running on port ${PORT}`);
