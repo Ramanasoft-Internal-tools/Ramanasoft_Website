@@ -50,7 +50,7 @@ var server = app.listen(PORT, () => {
 });
 
 
-// var io = require('socket.io')(server, { cors: { origin: '*' } });
+var io = require('socket.io')(server, { cors: { origin: '*' } });
 
 const query = util.promisify(pool.query).bind(pool);
 
